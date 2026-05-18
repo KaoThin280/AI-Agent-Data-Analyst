@@ -278,7 +278,7 @@ def execute_code_e2b(code: str, files_to_mount: List[str]) -> Dict[str, Any]:
     logger.info("Creating E2B sandbox for code execution...")
     
     try:
-        with Sandbox.create() as sandbox:
+        with Sandbox() as sandbox:
             # Upload required files
             for file_path in files_to_mount:
                 if not os.path.isfile(file_path):
