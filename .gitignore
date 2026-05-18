@@ -1,0 +1,10 @@
+# Bỏ qua môi trường ảo và cache của Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Bỏ qua file biến môi trường (Tuyệt đối quan trọng)
+.env
+
+# Bỏ qua thư mục dữ liệu tạm
+back_end/temp_data/
