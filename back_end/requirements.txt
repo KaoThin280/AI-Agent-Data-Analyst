@@ -26,3 +26,4 @@ python-multipart==0.0.12
 tenacity==8.2.3            # Retry logic with exponential backoff
 aiofiles==23.2.1           # Async file operations
 
+httpx==0.27.2
