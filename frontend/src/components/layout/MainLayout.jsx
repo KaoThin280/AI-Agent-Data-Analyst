@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PanelRightOpen } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
-import ChatInterface from '../Chat/ChatInterface';
+import ChatInterface from '../chat/ChatInterface';
 import RightPanel from './RightPanel';
 import ReviewModal from '../Feedback/ReviewModal';
 import useAppStore from '../../store/useAppStore';
