@@ -9,7 +9,7 @@ import { fetchFileContent, getTableData, fetchFileBlob } from '../../services/ap
 import MarkdownRenderer from '../Renderers/MarkdownRenderer';
 import DataTableViewer from '../Renderers/DataTableViewer';
 import PlotlyHtmlRenderer from '../Renderers/PlotlyHtmlRenderer';
-import VisualizationViewer from '../charts/VisualizationViewer';
+import VisualizationViewer from '../Charts/VisualizationViewer';
 
 export default function MessageList({ onRetry, darkMode }) {
   const { messages: chatHistory, isLoading } = useAppStore();
