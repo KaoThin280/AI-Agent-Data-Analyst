@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Table2, BarChart2, X } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import DataExplorer from '../data_view/DataExplorer';
-import VisualizationViewer from '../charts/VisualizationViewer';
+import VisualizationViewer from '../Charts/VisualizationViewer';
 
 export default function RightPanel({ onClose, isCollapsed }) {
   const [activeTab, setActiveTab] = useState('data'); // 'data' | 'charts'
