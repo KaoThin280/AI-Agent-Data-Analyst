@@ -21,12 +21,39 @@ export default function MessageList({ onRetry, darkMode }) {
 
   if (chatHistory.length === 0 && !isLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-gray-400 px-4">
+      <div className="flex-1 flex flex-col items-center justify-center text-gray-400 px-4 py-8 overflow-y-auto">
         <Bot size={56} className="mb-4 opacity-30" />
         <p className="text-lg font-medium text-gray-500">Start Analyzing Data</p>
         <p className="text-sm text-gray-400 mt-1 text-center max-w-md">
           Upload a CSV or Excel file and ask a question in natural language.
         </p>
+        
+        {/* Instructional Background Section */}
+        <div className="mt-8 w-full max-w-2xl space-y-6">
+          {/* Usage Instructions */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">How to Use</h3>
+            <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed">
+              Try providing a file and get analysis from the chatbot, or you can ask the chatbot to create sample data and request analysis or draw charts afterwards. The more detailed the request, the better the chatbot understands it.
+            </p>
+          </div>
+          
+          {/* System Notes */}
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+            <h3 className="font-semibold text-amber-900 dark:text-amber-300 mb-2">System Notes</h3>
+            <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
+              The system is built at a personal level, the server configuration is provided at a free tier level so sometimes you may encounter out of memory or timeout issues for deep computational analysis.
+            </p>
+          </div>
+          
+          {/* Future Development */}
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <h3 className="font-semibold text-green-900 dark:text-green-300 mb-2">Future Development</h3>
+            <p className="text-sm text-green-800 dark:text-green-200 leading-relaxed">
+              Add capability to read charts/images for the chatbot
+            </p>
+          </div>
+        </div>
       </div>
     );
   }

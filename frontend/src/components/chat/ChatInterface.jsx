@@ -102,7 +102,7 @@ export default function ChatInterface({ darkMode }) {
             )}
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 text-center transition-colors">
-            Press Enter to send · AI may take 10–30 seconds to analyze and execute code
+            Press Enter to send · AI may take 30–40 seconds to analyze and execute code
           </p>
         </div>
       </div>

@@ -101,7 +101,7 @@ export default function PlotlyHtmlRenderer({ htmlContent, title }) {
     <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
       <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b">
         <span className="text-xs font-medium text-gray-600 truncate">
-          {title || 'Bi\u1EC3u \u0111\u1ED3 t\u01B0\u01A1ng t\u00E1c'}
+          {title || 'Interactive Chart'}
         </span>
         <button
           onClick={() => setIsFullscreen(true)}

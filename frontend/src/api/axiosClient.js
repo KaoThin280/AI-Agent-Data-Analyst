@@ -1,9 +1,9 @@
 /**
  * Axios Client — BI AI Agent Data Analyst
  *
- * - Base URL lấy từ import.meta.env.VITE_API_BASE_URL (mặc định http://127.0.0.1:8000)
- * - Tự động inject header X-API-Key vào mọi request
- * - Interceptor xử lý lỗi tập trung (401, 413, 422, 500...)
+ * - Base URL from import.meta.env.VITE_API_BASE_URL (default http://127.0.0.1:8000)
+ * - Automatically inject X-API-Key header into every request
+ * - Centralized error handling interceptor (401, 413, 422, 500...)
  */
 
 import axios from 'axios';
@@ -16,7 +16,7 @@ console.log('VITE_BACKEND_SECRET_TOKEN:', import.meta.env.VITE_BACKEND_SECRET_TO
 // ── Instance ─────────────────────────────────────────────────────────
 const axiosClient = axios.create({
   baseURL: BASE_URL,
-  timeout: 120_000,               // 2 minutes — phù hợp với LLM + E2B
+  timeout: 120_000,               // 2 minutes — suitable for LLM + E2B
   headers: {
     'Content-Type': 'application/json',
   },
@@ -42,31 +42,31 @@ axiosClient.interceptors.response.use(
 
       // Map common status codes to user-friendly messages
       const statusMessages = {
-        400: 'Yêu cầu không hợp lệ. Vui lòng kiểm tra lại dữ liệu đầu vào.',
-        401: 'Xác thực thất bại. Vui lòng kiểm tra API key.',
-        403: 'Bạn không có quyền truy cập tài nguyên này.',
-        404: 'Tài nguyên không tìm thấy.',
-        413: 'File quá lớn. Kích thước tối đa là 100MB.',
-        422: 'Dữ liệu không thể xử lý. Vui lòng kiểm tra định dạng file.',
-        429: 'Quá nhiều yêu cầu. Vui lòng thử lại sau.',
-        500: 'Lỗi máy chủ nội bộ. Vui lòng thử lại sau.',
-        503: 'Dịch vụ tạm thời không khả dụng (LLM/E2B).',
+        400: 'Invalid request. Please check your input data.',
+        401: 'Authentication failed. Please check your API key.',
+        403: 'You don\'t have permission to access this resource.',
+        404: 'Resource not found.',
+        413: 'File too large. Maximum size is 100MB.',
+        422: 'Data cannot be processed. Please check file format.',
+        429: 'Too many requests. Please try again later.',
+        500: 'Internal server error. Please try again later.',
+        503: 'Service temporarily unavailable (LLM/E2B).',
       };
 
       const message =
         data?.detail ||
         statusMessages[status] ||
-        `Lỗi máy chủ (${status})`;
+        `Server error (${status})`;
 
       return Promise.reject(new Error(message));
     }
 
     if (error.code === 'ECONNABORTED') {
-      return Promise.reject(new Error('Kết nối bị timeout. Vui lòng thử lại.'));
+      return Promise.reject(new Error('Connection timeout. Please try again.'));
     }
 
     if (!error.response) {
-      return Promise.reject(new Error('Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.'));
+      return Promise.reject(new Error('Unable to connect to server. Please check your network connection.'));
     }
 
     return Promise.reject(error);
