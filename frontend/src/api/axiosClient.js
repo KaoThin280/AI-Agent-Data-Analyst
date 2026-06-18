@@ -1,31 +1,44 @@
 /**
- * Axios Client — BI AI Agent Data Analyst
+ * Axios Client - BI AI Agent Data Analyst
  *
  * - Base URL from import.meta.env.VITE_API_BASE_URL (default http://127.0.0.1:8000)
- * - Automatically inject X-API-Key header into every request
+ * - Automatically inject X-API-Key header into every request except the
+ *   public landing/info/status endpoints
  * - Centralized error handling interceptor (401, 413, 422, 500...)
  */
 
 import axios from 'axios';
 
-// ── Base URL ─────────────────────────────────────────────────────────
+// ---- Base URL ---------------------------------------------------------
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const API_KEY = import.meta.env.VITE_BACKEND_SECRET_TOKEN || '';
+
 console.log('VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
 console.log('VITE_BACKEND_SECRET_TOKEN:', import.meta.env.VITE_BACKEND_SECRET_TOKEN);
-// ── Instance ─────────────────────────────────────────────────────────
+
+// Paths that must NOT receive the X-API-Key header. The landing page
+// needs to be reachable without the user pasting the secret token first.
+const PUBLIC_PATH_PREFIXES = ['/api/intro', '/api/status', '/api/sample-data/', '/health'];
+
+function isPublicPath(url) {
+  if (!url) return false;
+  const path = String(url).split('?')[0];
+  return PUBLIC_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+// ---- Instance ---------------------------------------------------------
 const axiosClient = axios.create({
   baseURL: BASE_URL,
-  timeout: 120_000,               // 2 minutes — suitable for LLM + E2B
+  timeout: 120_000,               // 2 minutes - suitable for LLM + E2B
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// ── Request interceptor: inject API key ─────────────────────────────
+// ---- Request interceptor: inject API key (except for public paths) --
 axiosClient.interceptors.request.use(
   (config) => {
-    if (API_KEY) {
+    if (API_KEY && !isPublicPath(config.url)) {
       config.headers['X-API-Key'] = API_KEY;
     }
     return config;
@@ -33,18 +46,17 @@ axiosClient.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
-// ── Response interceptor: normalize errors ──────────────────────────
+// ---- Response interceptor: normalize errors -------------------------
 axiosClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
       const { status, data } = error.response;
 
-      // Map common status codes to user-friendly messages
       const statusMessages = {
         400: 'Invalid request. Please check your input data.',
         401: 'Authentication failed. Please check your API key.',
-        403: 'You don\'t have permission to access this resource.',
+        403: "You don't have permission to access this resource.",
         404: 'Resource not found.',
         413: 'File too large. Maximum size is 100MB.',
         422: 'Data cannot be processed. Please check file format.',

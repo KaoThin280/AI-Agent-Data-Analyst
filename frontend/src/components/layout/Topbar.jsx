@@ -1,6 +1,7 @@
 import React from 'react';
-import { Menu, Moon, Sun, Activity } from 'lucide-react';
+import { Menu, Moon, Sun } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
+import ServerStatusBadge from '../status/ServerStatusBadge';
 
 export default function Topbar({ onToggleSidebar, darkMode, onToggleDarkMode }) {
   const { files, selectedFiles } = useAppStore();
@@ -11,7 +12,6 @@ export default function Topbar({ onToggleSidebar, darkMode, onToggleDarkMode }) 
 
   return (
     <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center shadow-sm shrink-0 transition-colors">
-      {/* Sidebar toggle */}
       <button
         onClick={onToggleSidebar}
         className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 mr-3 transition-colors"
@@ -20,17 +20,12 @@ export default function Topbar({ onToggleSidebar, darkMode, onToggleDarkMode }) 
         <Menu size={20} />
       </button>
 
-      {/* App title */}
-      <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100 mr-8 hidden sm:block tracking-tight">
+      <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100 mr-4 hidden sm:block tracking-tight">
         AI Data Analyst
       </h1>
 
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Session status indicator */}
-      <div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 mr-3">
-        <Activity size={12} />
+      {/* Sidebar selection status (compact) */}
+      <div className="hidden md:flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 mr-3">
         <span
           className={`inline-block w-2 h-2 rounded-full ${
             status === 'ready'
@@ -40,7 +35,7 @@ export default function Topbar({ onToggleSidebar, darkMode, onToggleDarkMode }) 
                 : 'bg-gray-300'
           }`}
         />
-        <span className="hidden sm:inline">
+        <span>
           {status === 'ready'
             ? 'Ready'
             : status === 'idle'
@@ -49,7 +44,13 @@ export default function Topbar({ onToggleSidebar, darkMode, onToggleDarkMode }) 
         </span>
       </div>
 
-      {/* Theme toggle */}
+      <div className="flex-1" />
+
+      {/* Server status badge (live) */}
+      <div className="mr-3">
+        <ServerStatusBadge />
+      </div>
+
       <button
         onClick={onToggleDarkMode}
         className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors"

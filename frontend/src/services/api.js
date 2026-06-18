@@ -1,9 +1,9 @@
 // src/services/api.js
-// API Client Layer — built on top of axiosClient
+// API Client Layer - built on top of axiosClient
 
 import axiosClient from '../api/axiosClient';
 
-// ── Upload file ───────────────────────────────────────────────────────
+// ---- Upload file -----------------------------------------------------
 export const uploadFile = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
@@ -15,37 +15,41 @@ export const uploadFile = async (file) => {
   return response.data;
 };
 
-// ── Chat with AI ──────────────────────────────────────────────────────
-export const chatWithAI = async (query, tables = [], files = []) => {
-  // Handle both old-style (string query) and new-style (payload object)
+// ---- Chat with AI (supports workflow events for the status panel) ---
+export const chatWithAI = async (query, tables = [], files = [], options = {}) => {
   let queryStr = query;
   let tableList = tables;
   let fileList = files;
 
   if (typeof query === 'object' && query !== null) {
-    // New-style payload: { query, tables, files }
     queryStr = query.query || '';
     tableList = query.tables || [];
     fileList = query.files || [];
   }
+
+  const includeEvents = options.includeEvents !== false;
+
   const response = await axiosClient.post(
     '/chat',
     { tables: tableList, files: fileList },
     {
-      params: { query: queryStr },
-    timeout: 300_000,
+      params: {
+        query: queryStr,
+        include_events: includeEvents,
+      },
+      timeout: 300_000,
     }
   );
   return response.data;
 };
 
-// ── List files ────────────────────────────────────────────────────────
+// ---- List files ------------------------------------------------------
 export const getFilesList = async () => {
   const response = await axiosClient.get('/files');
   return response.data;
 };
 
-// ── Download file as blob ─────────────────────────────────────────────
+// ---- Download file as blob -------------------------------------------
 export const fetchFileBlob = async (fileName) => {
   const response = await axiosClient.get(`/files/${encodeURIComponent(fileName)}`, {
     responseType: 'blob',
@@ -53,7 +57,7 @@ export const fetchFileBlob = async (fileName) => {
   return URL.createObjectURL(response.data);
 };
 
-// ── Get HTML file content as text (for Plotly charts) ─────────────────
+// ---- Get HTML file content as text (for Plotly charts) ---------------
 export const fetchFileContent = async (fileName) => {
   const response = await axiosClient.get(`/files/${encodeURIComponent(fileName)}`, {
     responseType: 'text',
@@ -61,18 +65,15 @@ export const fetchFileContent = async (fileName) => {
   return response.data;
 };
 
-// ── Get table data for manual charting or preview ─────────────────────
+// ---- Get table data for manual charting or preview -------------------
 export const getTableData = async (tableName) => {
-  // Note: the backend expects session_id = filename; we pass the table name
   const response = await axiosClient.get(`/tables/${encodeURIComponent(tableName)}`);
   return response.data;
 };
 
-// ── Get first N rows for file preview ─────────────────────────────────
 export const fetchFilePreview = async (fileName) => {
   try {
     const data = await getTableData(fileName);
-    // Return only first 5 rows for preview
     return {
       columns: data.columns || {},
       rows: (data.data || []).slice(0, 5),
@@ -83,13 +84,13 @@ export const fetchFilePreview = async (fileName) => {
   }
 };
 
-// ── Submit review ─────────────────────────────────────────────────────
+// ---- Submit review ---------------------------------------------------
 export const submitReview = async (reviewData) => {
   const response = await axiosClient.post('/reviews', reviewData);
   return response.data;
 };
 
-// ── Health check ──────────────────────────────────────────────────────
+// ---- Health check ----------------------------------------------------
 export const checkHealth = async () => {
   try {
     const response = await axiosClient.get('/health', { timeout: 5000 });
@@ -99,7 +100,37 @@ export const checkHealth = async () => {
   }
 };
 
-// ── Legacy namespace (compatibility) ───────────────────────────────────
+// ---- Public info / status endpoints (no API key required) -----------
+
+// Get landing greeting + sample-data description.
+export const getIntro = async () => {
+  const response = await axiosClient.get('/api/intro', { timeout: 15_000 });
+  return response.data;
+};
+
+// Lightweight status ping for the connection badge.
+export const getStatus = async () => {
+  try {
+    const response = await axiosClient.get('/api/status', { timeout: 10_000 });
+    return response.data;
+  } catch (err) {
+    return {
+      ok: false,
+      connection_state: 'error',
+      message: 'Unable to reach backend.',
+      database: { ready: false, counts: {}, error: null },
+      free_tier_notes: '',
+    };
+  }
+};
+
+// Pre-built query for the "Tell me about this data" button.
+export const getTellMeQuery = async () => {
+  const response = await axiosClient.get('/api/sample-data/tell-me', { timeout: 5_000 });
+  return response.data;
+};
+
+// ---- Legacy namespace ------------------------------------------------
 export const api = {
   uploadFile,
   chatWithAI,
@@ -109,5 +140,7 @@ export const api = {
   getTableData,
   submitReview,
   fetchFilePreview,
+  getIntro,
+  getStatus,
+  getTellMeQuery,
 };
-

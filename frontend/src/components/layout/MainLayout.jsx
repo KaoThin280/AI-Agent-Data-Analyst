@@ -18,12 +18,20 @@ export default function MainLayout() {
     messages,
     files,
     selectedFiles,
+    loadIntro,
+    checkServerStatus,
   } = useAppStore();
 
   // Apply theme from store
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
+
+  // Load intro data + server status when the app boots.
+  useEffect(() => {
+    loadIntro();
+    checkServerStatus();
+  }, [loadIntro, checkServerStatus]);
 
   // Auto-open right panel when AI returns charts
   useEffect(() => {
@@ -62,7 +70,7 @@ export default function MainLayout() {
 
         {/* Main content: Chat (top) + Right Panel (bottom) */}
         <div className="flex-1 flex flex-col overflow-hidden p-4 lg:p-6 gap-4">
-          {/* Chat area — takes remaining space */}
+          {/* Chat area - takes remaining space */}
           <div className="flex-1 min-h-0">
             <ChatInterface darkMode={theme === 'dark'} />
           </div>
@@ -78,7 +86,7 @@ export default function MainLayout() {
                   rounded-full transition-colors border border-gray-200 dark:border-gray-700"
               >
                 <PanelRightOpen size={14} />
-                Show Data & Charts
+                Show Data and Charts
               </button>
             </div>
           )}

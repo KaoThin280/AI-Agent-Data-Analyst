@@ -1,7 +1,29 @@
 import React from 'react';
-import { Upload, FileText, Database, ChevronDown, ChevronUp, X, Send, BarChart2 } from 'lucide-react';
+import { FileText, Database, X, Send } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import FileUploader from '../Upload/FileUploader';
+
+function SourceTag({ source }) {
+  if (source === 'db') {
+    return (
+      <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
+        DB
+      </span>
+    );
+  }
+  if (source === 'sample') {
+    return (
+      <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
+        Sample
+      </span>
+    );
+  }
+  return (
+    <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+      Upload
+    </span>
+  );
+}
 
 export default function Sidebar({ isOpen, setIsOpen, onAnalyze }) {
   const {
@@ -11,10 +33,12 @@ export default function Sidebar({ isOpen, setIsOpen, onAnalyze }) {
     selectAllFiles,
     deselectAllFiles,
     removeFile,
-    uploadFile,
   } = useAppStore();
 
   const allSelected = files.length > 0 && selectedFiles.length === files.length;
+  // Only user-uploaded files can be removed. Pre-loaded samples are
+  // protected so the UI never starts in an "empty" state.
+  const isRemovable = (file) => file.source === 'upload' || !file.source;
 
   return (
     <div
@@ -34,6 +58,7 @@ export default function Sidebar({ isOpen, setIsOpen, onAnalyze }) {
         <button
           onClick={() => setIsOpen(false)}
           className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 dark:text-gray-500 transition-colors"
+          title="Close sidebar"
         >
           <X size={18} />
         </button>
@@ -52,7 +77,6 @@ export default function Sidebar({ isOpen, setIsOpen, onAnalyze }) {
         {/* File list with checkboxes */}
         {files.length > 0 && (
           <div className="space-y-3">
-            {/* Select / Deselect all */}
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
                 {files.length} file{files.length > 1 ? 's' : ''}
@@ -65,14 +89,14 @@ export default function Sidebar({ isOpen, setIsOpen, onAnalyze }) {
               </button>
             </div>
 
-            {/* File items */}
             <ul className="space-y-1.5">
               {files.map((file, idx) => {
                 const isSelected = selectedFiles.includes(file.name);
+                const removable = isRemovable(file);
+                const isDb = file.source === 'db';
 
                 return (
                   <li key={idx} className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors group">
-                    {/* Checkbox */}
                     <button
                       onClick={() => toggleFileSelection(file.name)}
                       className={`
@@ -90,39 +114,49 @@ export default function Sidebar({ isOpen, setIsOpen, onAnalyze }) {
                       )}
                     </button>
 
-                    {/* Icon */}
-                    <div className="w-7 h-7 rounded bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-                      <FileText size={14} className="text-blue-600 dark:text-blue-400" />
+                    <div className={`w-7 h-7 rounded flex items-center justify-center shrink-0 ${
+                      isDb
+                        ? 'bg-indigo-50 dark:bg-indigo-900/30'
+                        : 'bg-blue-50 dark:bg-blue-900/30'
+                    }`}>
+                      {isDb
+                        ? <Database size={14} className="text-indigo-600 dark:text-indigo-300" />
+                        : <FileText size={14} className="text-blue-600 dark:text-blue-400" />}
                     </div>
 
-                    {/* File info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{file.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                          {file.name}
+                        </p>
+                        <SourceTag source={file.source} />
+                      </div>
                       <p className="text-xs text-gray-400 dark:text-gray-500">
-                        {file.rows?.toLocaleString() || 0} rows · {file.columns || 0} cols
+                        {Number(file.rows || 0).toLocaleString()} rows
+                        {file.columns ? ` · ${file.columns} cols` : ''}
                       </p>
                     </div>
 
-                    {/* Remove button */}
-                    <button
-                      onClick={() => removeFile(file.name)}
-                      className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <X size={14} />
-                    </button>
+                    {removable && (
+                      <button
+                        onClick={() => removeFile(file.name)}
+                        className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Remove file"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </li>
                 );
               })}
             </ul>
 
-            {/* Separator */}
             <hr className="border-gray-200 dark:border-gray-700" />
 
-            {/* Selected files summary */}
             <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
               <p>
                 <span className="font-medium text-gray-700 dark:text-gray-300">{selectedFiles.length}</span> of{' '}
-                <span className="font-medium text-gray-700 dark:text-gray-300">{files.length}</span> file(s) selected
+                <span className="font-medium text-gray-700 dark:text-gray-300">{files.length}</span> selected
               </p>
               {selectedFiles.length > 0 && (
                 <ul className="pl-2 space-y-0.5 max-h-20 overflow-y-auto">
@@ -139,7 +173,7 @@ export default function Sidebar({ isOpen, setIsOpen, onAnalyze }) {
         )}
       </div>
 
-      {/* Analyze button — fixed at bottom */}
+      {/* Analyze button - fixed at bottom */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
         <button
           onClick={onAnalyze}

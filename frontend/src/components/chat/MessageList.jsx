@@ -10,6 +10,8 @@ import MarkdownRenderer from '../Renderers/MarkdownRenderer';
 import DataTableViewer from '../Renderers/DataTableViewer';
 import PlotlyHtmlRenderer from '../Renderers/PlotlyHtmlRenderer';
 import VisualizationViewer from '../Charts/VisualizationViewer';
+import IntroPanel from '../intro/IntroPanel';
+import WorkflowProgress from '../workflow/WorkflowProgress';
 
 export default function MessageList({ onRetry, darkMode }) {
   const { messages: chatHistory, isLoading } = useAppStore();
@@ -21,45 +23,21 @@ export default function MessageList({ onRetry, darkMode }) {
 
   if (chatHistory.length === 0 && !isLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-gray-400 px-4 py-8 overflow-y-auto">
-        <Bot size={56} className="mb-4 opacity-30" />
-        <p className="text-lg font-medium text-gray-500">Start Analyzing Data</p>
-        <p className="text-sm text-gray-400 mt-1 text-center max-w-md">
-          Upload a CSV or Excel file and ask a question in natural language.
-        </p>
-        
-        {/* Instructional Background Section */}
-        <div className="mt-8 w-full max-w-2xl space-y-6">
-          {/* Usage Instructions */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">How to Use</h3>
-            <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed">
-              Try providing a file and get analysis from the chatbot, or you can ask the chatbot to create sample data and request analysis or draw charts afterwards. The more detailed the request, the better the chatbot understands it.
-            </p>
-          </div>
-          
-          {/* System Notes */}
-          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-            <h3 className="font-semibold text-amber-900 dark:text-amber-300 mb-2">System Notes</h3>
-            <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
-              The system is built at a personal level, the server configuration is provided at a free tier level so sometimes you may encounter out of memory or timeout issues for deep computational analysis.
-            </p>
-          </div>
-          
-          {/* Future Development */}
-          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-            <h3 className="font-semibold text-green-900 dark:text-green-300 mb-2">Future Development</h3>
-            <p className="text-sm text-green-800 dark:text-green-200 leading-relaxed">
-              Add capability to read charts/images for the chatbot
-            </p>
-          </div>
-        </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        <IntroPanel />
+        <div className="mt-6"><WorkflowProgress /></div>
       </div>
     );
   }
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scroll-smooth">
+      {chatHistory.length === 0 && (
+        <div className="mb-2">
+          <IntroPanel />
+        </div>
+      )}
+
       {chatHistory.map((msg, idx) => (
         <div
           key={idx}
@@ -90,16 +68,12 @@ export default function MessageList({ onRetry, darkMode }) {
               </div>
             )}
 
-            {/* ── Generated Code Section ── */}
             {msg.code && <CodeSection code={msg.code} />}
 
-            {/* ── Execution Logs Section ── */}
             {msg.logs && <LogsSection logs={msg.logs} />}
 
-            {/* ── File Attachments ── */}
             {msg.files && msg.files.length > 0 && <FileAttachments files={msg.files} />}
 
-            {/* ── Retry Badge ── */}
             {msg.retries !== undefined && msg.retries > 0 && (
               <div className="text-xs text-amber-500 dark:text-amber-400 mt-1 flex items-center gap-1">
                 <AlertTriangle size={12} />
@@ -107,7 +81,6 @@ export default function MessageList({ onRetry, darkMode }) {
               </div>
             )}
 
-            {/* ── Error State with Retry Button ── */}
             {msg.error && (
               <ErrorState
                 message={msg.error}
@@ -125,13 +98,17 @@ export default function MessageList({ onRetry, darkMode }) {
         </div>
       ))}
 
-      {isLoading && <LoadingIndicator darkMode={darkMode} />}
+      {isLoading && (
+        <div className="space-y-2">
+          <LoadingIndicator darkMode={darkMode} />
+          <WorkflowProgress />
+        </div>
+      )}
       <div ref={endRef} />
     </div>
   );
 }
 
-/* ── Code Section (collapsible with copy button) ─────────────────── */
 function CodeSection({ code }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -164,7 +141,6 @@ function CodeSection({ code }) {
   );
 }
 
-/* ── Logs Section (collapsible) ──────────────────────────────────── */
 function LogsSection({ logs }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -189,7 +165,6 @@ function LogsSection({ logs }) {
   );
 }
 
-/* ── Error State ─────────────────────────────────────────────────── */
 function ErrorState({ message, onRetry }) {
   return (
     <div className="mt-3 px-3 py-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg flex flex-col gap-2 animate-slideDown">
@@ -210,7 +185,6 @@ function ErrorState({ message, onRetry }) {
   );
 }
 
-/* ── File Attachments ────────────────────────────────────────────── */
 function FileAttachments({ files }) {
   const [expandedHtml, setExpandedHtml] = useState(null);
   const [htmlContents, setHtmlContents] = useState({});
@@ -258,7 +232,6 @@ function FileAttachments({ files }) {
     }
   }, [expandedCsv, csvData]);
 
-  // Fetch image blobs for PNG files
   useEffect(() => {
     pngFiles.forEach(async (f) => {
       if (!imageUrls[f]) {
@@ -274,7 +247,6 @@ function FileAttachments({ files }) {
 
   return (
     <div className="mt-2 space-y-2">
-      {/* CSV Files */}
       {csvFiles.map((file, fi) => (
         <div key={`csv-${fi}`}>
           <button
@@ -296,7 +268,6 @@ function FileAttachments({ files }) {
         </div>
       ))}
 
-      {/* Visualization Viewer for HTML + PNG charts */}
       {htmlFiles.length + pngFiles.length > 0 && (
         <VisualizationViewer
           files={[...htmlFiles, ...pngFiles]}
@@ -305,7 +276,6 @@ function FileAttachments({ files }) {
         />
       )}
 
-      {/* Other Files */}
       {otherFiles.map((file, fi) => (
         <div key={`other-${fi}`} className="inline-flex items-center gap-1 text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-2.5 py-1 rounded-full mr-1">
           <FileText size={12} /> {file}
@@ -315,7 +285,6 @@ function FileAttachments({ files }) {
   );
 }
 
-/* ── Loading Indicator with Typing Animation ────────────────────── */
 function LoadingIndicator({ darkMode }) {
   return (
     <div className="flex gap-3 justify-start animate-fadeIn">

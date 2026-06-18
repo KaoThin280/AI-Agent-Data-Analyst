@@ -109,16 +109,18 @@ async def handle_upload(
         table_name=safe_filename,
         file_path=file_path,
         columns=data_context.columns,
+        source="upload",
     )
 
     try:
         # Use structured workflow with default upload query
         data_context_summary = data_context.to_summary()
-        workflow_result = run_structured_workflow(
+        workflow_result = await run_structured_workflow(
             user_query="Please briefly describe this data",
             data_context_summary=data_context_summary,
             installed_packages=session_manager.installed_packages,
             files_in_session=[file_path],
+            db_summary=session_manager.get_db_summary() or "",
             max_retries=3,
         )
         ai_analysis = workflow_result.get("response_to_user", "")

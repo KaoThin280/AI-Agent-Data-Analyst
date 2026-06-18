@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     PINECONE_API_KEY: str = ""
     BACKEND_SECRET_TOKEN: str = ""
 
+    # ── Database (Supabase PostgreSQL) ────────────────────────────────
+    DATABASE_URL: str = ""
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DEBUG: bool = False
+
     # ── Paths ─────────────────────────────────────────────────────────
     TEMP_DATA_DIR: str = "temp_data"
 
@@ -41,5 +47,5 @@ os.makedirs(settings.TEMP_DATA_DIR, exist_ok=True)
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s | %(name)-25s | %(levelname)-5s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+    datefmt="%Y-%m-%d %H:%M",
 )

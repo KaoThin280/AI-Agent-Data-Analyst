@@ -1,13 +1,16 @@
-"""Chat router — the core structured workflow endpoint.
+"""Chat router - the core structured workflow endpoint.
 
 Flow:
-  1. Receive user query → Build structured prompt (User query + System data)
-  2. Send to AI → Parse structured response (Response to user / Request system / Code)
-  3. If Request system = E2B_EXE → Execute code in E2B sandbox → Loop
-  4. If Response to user != None → Return final answer
+  1. Receive user query -> Build structured prompt (User query + System data)
+  2. Send to AI -> Parse structured response
+  3. If Request system = E2B_EXE -> Execute code in E2B sandbox -> Loop
+  4. If Request system = QUERY_DB -> Query Supabase -> Loop
+  5. If Response to user != None -> Return final answer with workflow events
 """
+import asyncio
+import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Depends, status
 
@@ -23,7 +26,7 @@ router = APIRouter(dependencies=[Depends(get_api_key)])
 @router.post(
     "/chat",
     summary="Send a natural-language query for AI-powered data analysis",
-    response_description="AI reasoning, generated code, execution logs, and final insight",
+    response_description="AI reasoning, generated code, execution logs, final insight, workflow events",
 )
 async def handle_chat(
     query: str = Query(
@@ -32,45 +35,39 @@ async def handle_chat(
         max_length=5000,
         description="Your question or analysis request in natural language.",
     ),
+    include_events: bool = Query(
+        False,
+        description="If true, the response includes a list of workflow events "
+                    "(for the frontend status panel).",
+    ),
     _: str = Depends(get_api_key),
 ) -> Dict[str, Any]:
     """
-    Execute the structured AI-System communication loop:
-
-    1. Build prompt with User query + System data context
-    2. AI responds with structured output (Response to user / Request system / Code)
-    3. If code needed → Execute in E2B sandbox → Feed result back to AI
-    4. Loop until AI returns final response to user
-
-    Returns:
-        - `status`: "success" or "error"
-        - `user_response`: Natural-language answer
-        - `code_executed`: Python code that was run (if any)
-        - `artifacts_created`: List of generated file names
-        - `retries_used`: Number of retry attempts
-        - `error_message`: Error details if failed
+    Execute the structured AI-System communication loop.
     """
-    # Build current data context summary
     data_context_summary = session_manager.get_all_tables_info()
+    db_summary = session_manager.get_db_summary() or ""
     files_in_session = [
         meta["path"]
-        for meta in session_manager.tables.values()
-        if meta.get("path")
+        for name, meta in session_manager.tables.items()
+        if meta.get("path") and meta.get("source") != "db"
     ]
 
     logger.info(
-        "Chat request: query='%s...'  tables=%d  files=%d",
+        "Chat request: query='%s...'  tables=%d  files=%d  db_available=%s",
         query[:80],
         len(session_manager.tables),
         len(files_in_session),
+        session_manager.is_db_available(),
     )
 
     try:
-        result = run_structured_workflow(
+        result = await run_structured_workflow(
             user_query=query,
             data_context_summary=data_context_summary,
             installed_packages=session_manager.installed_packages,
             files_in_session=files_in_session,
+            db_summary=db_summary,
             max_retries=4,
         )
     except RuntimeError as exc:
@@ -78,17 +75,26 @@ async def handle_chat(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Workflow engine unavailable: {exc}",
         )
+    except Exception as exc:
+        logger.exception("Unexpected workflow failure")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Workflow failed: {exc}",
+        )
 
-    # Map structured workflow result keys to chat response format
     user_response = result.get("response_to_user", "")
     code_executed = result.get("code")
     artifacts_created = result.get("new_files", [])
     retries_used = result.get("retries_used", 0)
+    events = result.get("events", []) if include_events else []
 
-    return format_chat_response(
+    payload = format_chat_response(
         user_response_text=user_response,
         code_executed=code_executed,
         artifacts_created=artifacts_created,
         retries_used=retries_used,
         error_message=None,
     )
+    if include_events:
+        payload["workflow_events"] = events
+    return payload

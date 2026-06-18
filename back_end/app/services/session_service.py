@@ -1,7 +1,12 @@
 """
-Session manager — tracks uploaded tables, generated files, and installed packages
-throughout the lifecycle of a single server instance (singleton pattern).
+Session manager — tracks uploaded tables, generated files, installed
+packages, and pre-loaded sample data throughout the lifecycle of a
+single server instance (singleton pattern).
+
+Free-tier deployment uses in-memory state; for production replace
+with a persistent store.
 """
+import json
 import os
 import logging
 from typing import Any, Dict, List, Optional, Set
@@ -17,8 +22,11 @@ class SessionManager:
     """
     In-memory session state for the current server run.
 
-    Because this is a free-tier single-user app, we use a simple singleton
-    rather than a full database.  For production, replace with Redis / SQL.
+    Tracks three categories of tables:
+      - user-uploaded CSV/Excel files (added via /upload)
+      - pre-loaded local sample files (e.g. sample_timeseries.csv)
+      - virtual sample views backed by the Supabase database
+        (added via /sample-data/db)
     """
 
     def __init__(self):
@@ -27,17 +35,32 @@ class SessionManager:
         self.installed_packages: Set[str] = set()
         self.base_dir: str = settings.TEMP_DATA_DIR
         os.makedirs(self.base_dir, exist_ok=True)
+        # Cached database summary text (refreshed lazily).
+        self.db_summary: str = ""
+        self.db_available: bool = False
         logger.info("SessionManager initialised. Temp dir: %s", self.base_dir)
 
     # ── Table registration ───────────────────────────────────────────
 
-    def add_table(self, table_name: str, file_path: str, columns: dict) -> None:
-        """Register an uploaded file's metadata."""
+    def add_table(
+        self,
+        table_name: str,
+        file_path: str,
+        columns: dict,
+        source: str = "upload",
+    ) -> None:
+        """Register a file's metadata. source: upload / sample / db."""
         self.tables[table_name] = {
             "path": file_path,
             "columns": columns,
+            "source": source,
         }
-        logger.info("Table registered: %s (%s)", table_name, file_path)
+        logger.info(
+            "Table registered: %s (%s, source=%s)",
+            table_name,
+            file_path,
+            source,
+        )
 
     def remove_table(self, table_name: str) -> None:
         """Remove a table from session state."""
@@ -52,16 +75,18 @@ class SessionManager:
         This string is injected into the LLM system prompt.
         """
         if not self.tables:
-            return "No tables have been uploaded yet."
+            return "No tables have been loaded yet."
 
         lines = ["Available tables in the current session:"]
         for name, meta in self.tables.items():
             cols = meta.get("columns", {})
+            source = meta.get("source", "upload")
             col_summary = ", ".join(
                 f"{col} ({info.get('business_meaning', 'Unknown')})"
                 for col, info in cols.items()
             )
-            lines.append(f"- {name}: [{col_summary}]")
+            tag = f" [source: {source}]" if source != "upload" else ""
+            lines.append(f"- {name}{tag}: [{col_summary}]")
         return "\n".join(lines)
 
     # ── Raw table data for frontend manual plotting ──────────────────
@@ -71,15 +96,15 @@ class SessionManager:
         Return the full table as a list of row-dicts (JSON-safe).
         The DataFrame is loaded on demand and released immediately.
 
-        Args:
-            table_name: The filename (or alias) under which the table is registered.
-
-        Returns:
-            A list of dicts (one per row), or None if the table/file does not exist.
+        Returns None for virtual tables that have no underlying file.
         """
         meta = self.tables.get(table_name)
         if not meta:
             logger.warning("Table '%s' not found in session.", table_name)
+            return None
+
+        # Virtual DB views have no file path on disk.
+        if meta.get("source") == "db":
             return None
 
         file_path = meta.get("path")
@@ -105,6 +130,19 @@ class SessionManager:
     def get_table_names(self) -> List[str]:
         """Return all registered table names (for frontend listing)."""
         return list(self.tables.keys())
+
+    # ── Database summary caching ────────────────────────────────────
+
+    def set_db_summary(self, summary: str, available: bool) -> None:
+        """Cache the database summary so we do not query on every request."""
+        self.db_summary = summary
+        self.db_available = available
+
+    def get_db_summary(self) -> str:
+        return self.db_summary
+
+    def is_db_available(self) -> bool:
+        return self.db_available
 
 
 # Singleton — shared across all routes

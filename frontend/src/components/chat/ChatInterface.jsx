@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Send, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
 import useAppStore from '../../store/useAppStore';
 import MessageList from './MessageList';
@@ -13,6 +13,7 @@ export default function ChatInterface({ darkMode }) {
     sendMessage,
     clearChat,
     clearError,
+    serverStatus,
   } = useAppStore();
 
   const [input, setInput] = useState('');
@@ -36,8 +37,29 @@ export default function ChatInterface({ darkMode }) {
 
   const canSend = () => {
     if (isLoading) return false;
-    return input.trim().length > 0 && selectedFiles.length > 0;
+    // The sample data is pre-loaded, so the user can chat immediately
+    // without uploading anything of their own.
+    return input.trim().length > 0;
   };
+
+  // Auto-resize helper if we ever add a textarea, kept simple for now.
+  useEffect(() => {
+    // no-op placeholder
+  }, [input]);
+
+  // Build a friendly placeholder.
+  const placeholder = (() => {
+    if (selectedFiles.length > 0) {
+      return `Ask a question about ${selectedFiles.length === 1 ? 'this data' : 'your data'}...`;
+    }
+    if (files.length > 0) {
+      return 'Select files from the sidebar to enable chat...';
+    }
+    return 'Ask a question about the connected data...';
+  })();
+
+  const connectionReady = serverStatus?.connection_state === 'ready';
+  const showWarmingHint = serverStatus && serverStatus.connection_state !== 'ready';
 
   return (
     <div className="h-full flex flex-col">
@@ -49,6 +71,17 @@ export default function ChatInterface({ darkMode }) {
         />
 
         <div className="border-t border-gray-200 dark:border-gray-700 p-3 md:p-4 transition-colors duration-300">
+          {/* Connection warming hint (non-blocking). */}
+          {showWarmingHint && (
+            <div className="mb-3 px-3 py-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+              <RefreshCw size={14} className="shrink-0 animate-spin" />
+              <span className="flex-1 leading-relaxed">
+                {serverStatus?.message ||
+                  'Connecting to the backend. The first request can take up to a minute while the Render free-tier service spins up.'}
+              </span>
+            </div>
+          )}
+
           {/* Error Banner */}
           {error && (
             <div className="mb-3 px-3 py-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2 text-xs text-red-700 dark:text-red-300 animate-slideDown">
@@ -70,19 +103,14 @@ export default function ChatInterface({ darkMode }) {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={isLoading}
-              placeholder={
-                files.length === 0
-                  ? 'Upload a CSV file first, then ask a question...'
-                  : selectedFiles.length === 0
-                    ? 'Select files from sidebar, then ask a question...'
-                    : 'Ask a question about your data...'
-              }
+              placeholder={placeholder}
               className="flex-1 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 transition-all duration-200"
             />
             <button
               onClick={() => handleSend()}
               disabled={!canSend()}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 dark:disabled:bg-blue-800 text-white rounded-xl px-4 py-2.5 transition-all duration-200 disabled:cursor-not-allowed"
+              title="Send"
             >
               {isLoading ? (
                 <RefreshCw size={18} className="animate-spin" />
@@ -102,7 +130,7 @@ export default function ChatInterface({ darkMode }) {
             )}
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 text-center transition-colors">
-            Press Enter to send · AI may take 30–40 seconds to analyze and execute code
+            Press Enter to send. AI may take 30-60 seconds to analyse and execute code on the free tier.
           </p>
         </div>
       </div>
