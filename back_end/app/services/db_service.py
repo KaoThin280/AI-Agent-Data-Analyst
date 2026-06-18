@@ -432,10 +432,15 @@ async def get_database_overview() -> Dict[str, Any]:
     the frontend intro/status endpoints. Always returns a dict, even
     if the database is unreachable, so the frontend can still render
     a meaningful greeting.
+
+    `available` is True only when at least one row-count query
+    succeeded; otherwise the function returns available=False and
+    populates `error` with the reason.
     """
     counts = {"games": 0, "users": 0, "reviews": 0}
     available = False
     error: Optional[str] = None
+    successful_counts = 0
     try:
         async with AsyncSessionLocal() as session:  # type: AsyncSession
             for model, key in ((Game, "games"), (SteamUser, "users"), (Review, "reviews")):
@@ -444,9 +449,10 @@ async def get_database_overview() -> Dict[str, Any]:
                         select(func.count()).select_from(model)
                     )).scalar() or 0
                     counts[key] = int(cnt)
+                    successful_counts += 1
                 except Exception as inner_exc:
                     logger.warning("count failed for %s: %s", key, inner_exc)
-            available = True
+            available = successful_counts == len(counts)
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         logger.warning("Database not reachable for overview: %s", exc)
@@ -456,3 +462,5 @@ async def get_database_overview() -> Dict[str, Any]:
         "counts": counts,
         "error": error,
     }
+
+
