@@ -99,10 +99,18 @@ export default function IntroPanel() {
 
   const [retrying, setRetrying] = useState(false);
 
+  // NOTE: hooks below are declared in a fixed order so the hook count
+  // never changes between renders. The "early return" for the loading
+  // state is moved AFTER all hook calls.
+
   const reload = useCallback(async () => {
     setRetrying(true);
     try { await loadIntro(); } finally { setRetrying(false); }
   }, [loadIntro]);
+
+  const handleTellMe = useCallback(async () => {
+    try { await tellMeAboutSample(); } catch { /* surfaced via store */ }
+  }, [tellMeAboutSample]);
 
   useEffect(() => {
     if (!intro) loadIntro();
@@ -129,10 +137,6 @@ export default function IntroPanel() {
   const dbAvailable = !!db?.available;
   const dbError = db?.error;
   const dbCounts = db?.row_counts || {};
-
-  const handleTellMe = useCallback(async () => {
-    try { await tellMeAboutSample(); } catch { /* surfaced via store */ }
-  }, [tellMeAboutSample]);
 
   return (
     <div className="space-y-6 text-gray-700 dark:text-gray-200">
