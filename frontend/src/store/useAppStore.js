@@ -23,7 +23,7 @@ const getInitialTheme = () => {
 };
 
 // Initial pre-loaded sample tables (registered on the backend).
-// These are not "uploaded" by the user — they are loaded automatically
+// These are not "uploaded" by the user - they are loaded automatically
 // when the backend starts. The frontend treats them like normal files
 // in the sidebar so the user can interact with them right away.
 const PRELOADED_SAMPLES = [
@@ -94,14 +94,10 @@ const useAppStore = create((set, get) => {
 
     // ---- Workflow progress (live) ----------------------------------
     // List of small step objects for the in-flight chat request.
-    // Each item: { id, stage, label, status: 'pending'|'active'|'done'|'error', detail }
+    // Each item: { id, stage, label, status, detail }
     workflowSteps: [],
 
-    // Legacy compatibility
-    get uploadedFiles() { return get().files; },
-    get selectedFileNames() { return get().selectedFiles; },
-    get chatHistory() { return get().messages; },
-
+    // ---- Other state ----------------------------------------------
     currentDataContext: null,
     filePreviews: {},
     selectedColumns: {},
@@ -130,7 +126,6 @@ const useAppStore = create((set, get) => {
           }));
         }
         if (data?.sample_data?.local?.name) {
-          // Fetch preview for the bundled CSV sample.
           try {
             const { fetchFilePreview } = await import('../services/api');
             const preview = await fetchFilePreview(data.sample_data.local.name);
@@ -158,7 +153,6 @@ const useAppStore = create((set, get) => {
     checkServerStatus: async () => {
       const now = Date.now();
       const { serverStatusCheckedAt, isCheckingStatus } = get();
-      // Avoid spamming the endpoint — only re-check every 5 s.
       if (isCheckingStatus) return get().serverStatus;
       if (now - serverStatusCheckedAt < 5_000) return get().serverStatus;
 
@@ -272,7 +266,7 @@ const useAppStore = create((set, get) => {
 
     // ---- Chat / Message Actions ------------------------------------
     sendMessage: async (query, retryMessage = null) => {
-      const { selectedFiles, files, ensureSession, messages } = get();
+      const { selectedFiles, files, ensureSession } = get();
       ensureSession();
       set({ isLoading: true, error: null });
 
@@ -282,7 +276,6 @@ const useAppStore = create((set, get) => {
       }
 
       const queryStr = retryMessage || query;
-      // Reset workflow steps for the new request.
       set({ workflowSteps: [] });
 
       try {
@@ -294,7 +287,6 @@ const useAppStore = create((set, get) => {
 
         const response = await apiChat(payload, { includeEvents: true });
 
-        // Merge workflow events into our step list for the panel.
         const events = Array.isArray(response.workflow_events) ? response.workflow_events : [];
         const steps = events.map((ev, idx) => ({
           id: `ev-${idx}`,
@@ -343,7 +335,7 @@ const useAppStore = create((set, get) => {
         const errorMsg = {
           id: Date.now() + 1,
           role: 'ai',
-          content: `Error: ${errorMessage}`,
+          content: 'Error: ' + errorMessage,
           code: null,
           logs: null,
           files: [],
@@ -357,7 +349,6 @@ const useAppStore = create((set, get) => {
       }
     },
 
-    // Send the pre-built "Tell me about this data" prompt to /chat.
     tellMeAboutSample: async () => {
       try {
         const { query } = await apiGetTellMeQuery();
