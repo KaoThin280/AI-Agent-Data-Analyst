@@ -38,33 +38,23 @@ const PRELOADED_SAMPLES = [
     selected: true,
   },
   {
-    id: 'db.games',
-    name: 'db.games',
-    path: 'db.games',
+    id: 'metadata.csv',
+    name: 'metadata.csv',
+    path: 'metadata.csv',
     size: 0,
     rows: 0,
     columns: 0,
-    source: 'db',
+    source: 'sample',
     selected: true,
   },
   {
-    id: 'db.users',
-    name: 'db.users',
-    path: 'db.users',
+    id: 'reviews.csv',
+    name: 'reviews.csv',
+    path: 'reviews.csv',
     size: 0,
     rows: 0,
     columns: 0,
-    source: 'db',
-    selected: true,
-  },
-  {
-    id: 'db.reviews',
-    name: 'db.reviews',
-    path: 'db.reviews',
-    size: 0,
-    rows: 0,
-    columns: 0,
-    source: 'db',
+    source: 'sample',
     selected: true,
   },
 ];
@@ -113,35 +103,24 @@ const useAppStore = create((set, get) => {
       try {
         const data = await apiGetIntro();
         set({ intro: data });
-        // Update sample rows from the database overview.
-        if (data?.sample_data?.database?.row_counts) {
-          const counts = data.sample_data.database.row_counts;
+        // Update row/column counts for every pre-loaded CSV sample.
+        const samples = data?.sample_data || {};
+        const known = ['sample_timeseries.csv', 'metadata.csv', 'reviews.csv'];
+        const matchedSamples = known
+          .map((name) => samples[name])
+          .filter(Boolean);
+        if (matchedSamples.length > 0) {
           set((state) => ({
             files: state.files.map((f) => {
-              if (f.name === 'db.games') return { ...f, rows: counts.games || 0 };
-              if (f.name === 'db.users') return { ...f, rows: counts.users || 0 };
-              if (f.name === 'db.reviews') return { ...f, rows: counts.reviews || 0 };
-              return f;
+              const meta = samples[f.name];
+              if (!meta) return f;
+              return {
+                ...f,
+                rows: f.rows || 0,
+                columns: (meta.columns || []).length || f.columns || 0,
+              };
             }),
           }));
-        }
-        if (data?.sample_data?.local?.name) {
-          try {
-            const { fetchFilePreview } = await import('../services/api');
-            const preview = await fetchFilePreview(data.sample_data.local.name);
-            if (preview) {
-              set((state) => ({
-                filePreviews: { ...state.filePreviews, [data.sample_data.local.name]: preview },
-                files: state.files.map((f) =>
-                  f.name === data.sample_data.local.name
-                    ? { ...f, rows: preview.totalRows, columns: Object.keys(preview.columns || {}).length }
-                    : f
-                ),
-              }));
-            }
-          } catch {
-            // Preview is optional
-          }
         }
         return data;
       } catch (err) {

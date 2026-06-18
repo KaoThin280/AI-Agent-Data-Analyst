@@ -17,16 +17,21 @@ back_end/temp_data/
 back_end/reviews.txt
 back_end/db_query_output.txt
 back_end/smoke_output.txt
+back_end/test_response.txt
 temp_data/
 *.log
 
 # Test and smoke-test scripts that hit live infrastructure.
 # These are developer artifacts and should never end up in the
 # production repo. Run them locally or in CI, not from main.
-back_end/smoke_test.py
 back_end/db_query_smoke.py
 back_end/test_backend.py
-back_end/test_response.txt
+
+# Local CSV scratch files (the real ones live in back_end/temp_data/).
+# _reduce_csv.py and fix_csv.py were one-off generators used during
+# the Supabase-to-CSV migration; keep them out of the repo too.
+_reduce_csv.py
+fix_csv.py
 
 # IDE / OS junk
 .vscode/

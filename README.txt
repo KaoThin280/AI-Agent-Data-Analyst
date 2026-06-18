@@ -5,44 +5,42 @@
 PROJECT OVERVIEW
 ================================================================================
 Steam Game Data Analyst is a full-stack web application that combines an LLM,
-a read-only Supabase PostgreSQL database (Steam games, users, reviews), an E2B
-Python sandbox, and interactive Plotly charts.
+three bundled CSV samples (a daily time-series, Steam game metadata, and user
+reviews), an E2B Python sandbox, and interactive Plotly charts.
 
-Users can ask natural-language questions about the connected sample data
-without uploading anything, and can also drop in their own CSV/Excel files
-for one-off analysis. The AI agent can describe the data, run read-only SQL
-queries through a dedicated `QUERY_DB` tool, and execute Python visualisation
-code in a sandbox.
+Users can ask natural-language questions about the bundled data without
+uploading anything, and can also drop in their own CSV/Excel files for one-off
+analysis. The AI agent can describe the data, run read-only QUERY_CSV queries
+against the bundled samples, and execute Python visualisation code in a
+sandbox.
 
-The system uses a strict AI-System communication protocol: the LLM replies
-with `Response to user / Request system / Code`, and the backend services
-follow the request until the LLM is ready to answer. Every step is emitted
-as a workflow event so the UI can show a live progress panel.
+The system uses a strict AI-System communication protocol: the LLM replies with
+`Response to user / Request system / Code`, and the backend services follow the
+request until the LLM is ready to answer. Every step is emitted as a workflow
+event so the UI can show a live progress panel.
 
 
 KEY FEATURES
 ================================================================================
 1. PRE-LOADED SAMPLE DATA
-   - A local time-series CSV (sample_timeseries.csv) is registered on
-     startup so there is always something to ask about.
-   - Read-only virtual views over the connected Supabase Steam database
-     (db.games, db.users, db.reviews) appear in the sidebar with live
-     row counts.
+   - Three small CSVs are registered on startup so there is always
+     something to ask about:
+       * sample_timeseries.csv - daily revenue series (2024-2025)
+       * metadata.csv          - 30 Steam games (name, release date, ...)
+       * reviews.csv           - 25 user reviews (no review_text column)
    - One-click "Tell me about this data" button on every sample card.
 
 2. NATURAL LANGUAGE CHAT INTERFACE
    - Plain-English chat with the AI about any of the registered tables.
    - Live workflow panel that shows what the backend is currently doing
-     (Calling AI, Reading data context, Querying database, Running code,
-     Finalising).
+     (Calling AI, Querying CSV, Running code, Finalising).
    - Per-step retry and error reporting.
 
-3. DATABASE TOOL (LLM can query Supabase)
-   - The model emits `Request system: QUERY_DB` with a JSON payload
+3. CSV QUERY TOOL (LLM can read the bundled CSVs)
+   - The model emits `Request system: QUERY_CSV` with a JSON payload
      describing the table, columns, filters, ordering, and limit.
-   - The backend runs a safe, read-only SQLAlchemy query against Supabase
-     and feeds the result back to the LLM as additional context.
-   - Aggregations (count, avg, min, max, sum) are supported.
+   - The backend runs a safe, read-only pandas query against the bundled
+     CSV and feeds the result back to the LLM as additional context.
 
 4. E2B CODE EXECUTION
    - For visualisations and statistical analysis the model emits
@@ -76,119 +74,114 @@ KEY FEATURES
 ARCHITECTURE
 ================================================================================
 
-  ┌────────────────────┐    X-API-Key    ┌────────────────────────────┐
-  │  Vercel (Free)     │ ──────────────▶ │  Render (Free)             │
-  │  React + Vite SPA  │                 │  FastAPI app.main:app      │
-  │                    │                 │                            │
-  │  - IntroPanel      │                 │  Routers:                  │
-  │  - ChatInterface   │                 │   /api/intro (public)      │
-  │  - ServerStatus    │                 │   /api/status (public)     │
-  │  - WorkflowProg.   │                 │   /api/sample-data/* (pub) │
-  │  - Sidebar/Upload  │                 │   /health (public)         │
-  │                    │                 │   /upload, /chat, /files,  │
-  └────────────────────┘                 │   /tables, /reviews       │
-                                         │                            │
-                                         │  Services:                 │
-                                         │   LLMService (OpenRouter) │
-                                         │   DBService (Supabase)    │
-                                         │   E2BService (sandbox)     │
-                                         │   SampleDataService        │
-                                         │   StructuredWorkflow       │
-                                         └────────────┬───────────────┘
-                                                      │ asyncpg
-                                                      ▼
-                                         ┌────────────────────────────┐
-                                         │  Supabase PostgreSQL       │
-                                         │  (Free tier)               │
-                                         │                            │
-                                         │  games, users, reviews     │
-                                         │  (+ RBAC tables)           │
-                                         └────────────────────────────┘
+  +---------------------+    X-API-Key    +----------------------------+
+  |  Vercel (Free)      | --------------> |  Render (Free)             |
+  |  React + Vite SPA   |                 |  FastAPI app.main:app      |
+  |                     |                 |                            |
+  |  - IntroPanel       |                 |  Routers:                  |
+  |  - ChatInterface    |                 |   /api/intro (public)      |
+  |  - ServerStatus     |                 |   /api/status (public)     |
+  |  - WorkflowProg.    |                 |   /api/sample-data/* (pub) |
+  |  - Sidebar/Upload   |                 |   /health (public)         |
+  |                     |                 |   /upload, /chat, /files,  |
+  +---------------------+                 |   /tables, /reviews       |
+                                          |                            |
+                                          |  Services:                 |
+                                          |   LLMService (OpenRouter) |
+                                          |   DBService (CSV queries) |
+                                          |   E2BService (sandbox)     |
+                                          |   SampleDataService        |
+                                          |   StructuredWorkflow       |
+                                          +------------+---------------+
+                                                       |
+                                                       v
+                                          +----------------------------+
+                                          |  Bundled CSV samples       |
+                                          |  (in back_end/temp_data/)  |
+                                          |                            |
+                                          |  sample_timeseries.csv     |
+                                          |  metadata.csv              |
+                                          |  reviews.csv               |
+                                          +----------------------------+
 
 
 PROJECT STRUCTURE
 ================================================================================
 
 ROOT DIRECTORY
-│
-├── README.txt                       # This file
-├── .gitignore                       # Repo-level ignore rules
-│
-├── back_end/                        # FastAPI backend
-│   ├── requirements.txt             # Python dependencies
-│   ├── render.yaml                  # One-click Render Blueprint
-│   ├── SCHEMA_DOCUMENTATION.md      # DB schema reference
-│   ├── sample_timeseries.csv        # Bundled CSV sample
-│   ├── app/
-│   │   ├── main.py                  # FastAPI entry point
-│   │   │
-│   │   ├── api/routers/
-│   │   │   ├── info.py              # /api/intro, /api/status (public)
-│   │   │   ├── chat.py              # /chat (the workflow)
-│   │   │   ├── upload.py            # /upload (CSV/Excel ingest)
-│   │   │   ├── manual_plot.py       # /tables/{id} (manual charts)
-│   │   │   ├── reviews.py           # /reviews
-│   │   │   ├── download.py          # /files, /files/{name}
-│   │   │   └── db/sessions.py       # SQLAlchemy async engine (Supabase)
-│   │   │
-│   │   ├── core/
-│   │   │   ├── config.py            # Pydantic settings
-│   │   │   └── security.py          # X-API-Key auth
-│   │   │
-│   │   ├── services/
-│   │   │   ├── llm_service.py           # OpenRouter client
-│   │   │   ├── data_service.py          # DataContext extraction
-│   │   │   ├── e2b_service.py           # (legacy agentic workflow)
-│   │   │   ├── db_service.py            # Supabase read-only tool
-│   │   │   ├── session_service.py       # In-memory session state
-│   │   │   ├── sample_data_service.py   # Registers sample tables
-│   │   │   └── structured_workflow.py   # AI <-> System protocol loop
-│   │   │
-│   │   ├── models/                  # SQLAlchemy ORM models
-│   │   │   ├── steam.py             # Game, SteamUser, Review
-│   │   │   └── user.py              # AppUser, Role, Permission
-│   │   │
-│   │   ├── db/
-│   │   │   └── base.py              # SQLAlchemy declarative base
-│   │   │
-│   │   └── utils/
-│   │       └── response_formatter.py
-│   │
-│   ├── temp_data/                   # Generated files (gitignored)
-│   └── reviews.txt                  # User feedback (gitignored)
-│
-└── frontend/                        # React + Vite frontend
-    ├── package.json
-    ├── vite.config.js
-    ├── tailwind.config.js
-    ├── eslint.config.js
-    ├── index.html
-    ├── .env                         # VITE_API_BASE_URL + secret (gitignored)
-    │
-    ├── public/
-    └── src/
-        ├── main.jsx
-        ├── App.jsx
-        │
-        ├── api/axiosClient.js       # Axios + X-API-Key injection
-        ├── services/api.js          # API client (chat, intro, status)
-        ├── store/useAppStore.js     # Zustand store
-        │
-        ├── components/
-        │   ├── layout/              # MainLayout, Sidebar, Topbar, RightPanel
-        │   ├── chat/                # ChatInterface, MessageList
-        │   ├── intro/IntroPanel.jsx # Landing greeting + sample data
-        │   ├── status/ServerStatusBadge.jsx
-        │   ├── workflow/WorkflowProgress.jsx
-        │   ├── Upload/FileUploader.jsx
-        │   ├── Renderers/           # Table, Markdown, Plotly renderers
-        │   ├── data_view/           # Data explorer
-        │   ├── Charts/              # Chart components
-        │   └── Feedback/ReviewModal.jsx
-        │
-        ├── pages/ManualPlotPage.jsx
-        ├── hooks/
-        └── assets/
+|
+|-- README.txt                       # This file
+|-- .gitignore                       # Repo-level ignore rules
+|-- metadata.csv                     # Bundled sample (30 Steam games)
+|-- reviews.csv                      # Bundled sample (25 reviews)
+|
+|-- back_end/                        # FastAPI backend
+|   |-- requirements.txt             # Python dependencies
+|   |-- render.yaml                  # One-click Render Blueprint
+|   |-- SCHEMA_DOCUMENTATION.md      # Original DB schema reference
+|   |-- smoke_test.py                # Local smoke test (CSV-only mode)
+|   |-- sample_timeseries.csv        # Bundled CSV sample
+|   |-- app/
+|   |   |-- main.py                  # FastAPI entry point
+|   |   |
+|   |   |-- api/routers/
+|   |   |   |-- info.py              # /api/intro, /api/status (public)
+|   |   |   |-- chat.py              # /chat (the workflow)
+|   |   |   |-- upload.py            # /upload (CSV/Excel ingest)
+|   |   |   |-- manual_plot.py       # /tables/{id} (manual charts)
+|   |   |   |-- reviews.py           # /reviews
+|   |   |   `-- download.py          # /files, /files/{name}
+|   |   |
+|   |   |-- core/
+|   |   |   |-- config.py            # Pydantic settings
+|   |   |   `-- security.py          # X-API-Key auth
+|   |   |
+|   |   |-- services/
+|   |   |   |-- llm_service.py           # OpenRouter client
+|   |   |   |-- data_service.py          # DataContext extraction
+|   |   |   |-- e2b_service.py           # (legacy agentic workflow)
+|   |   |   |-- db_service.py            # CSV query tool (read-only)
+|   |   |   |-- session_service.py       # In-memory session state
+|   |   |   |-- sample_data_service.py   # Registers sample tables
+|   |   |   `-- structured_workflow.py   # AI <-> System protocol loop
+|   |   |
+|   |   `-- utils/
+|   |       `-- response_formatter.py
+|   |
+|   `-- temp_data/                   # Working dir for generated files
+|
+`-- frontend/                        # React + Vite frontend
+    |-- package.json
+    |-- vite.config.js
+    |-- tailwind.config.js
+    |-- eslint.config.js
+    |-- index.html
+    |-- .env                         # VITE_API_BASE_URL + secret (gitignored)
+    |
+    |-- public/
+    `-- src/
+        |-- main.jsx
+        |-- App.jsx
+        |
+        |-- api/axiosClient.js       # Axios + X-API-Key injection
+        |-- services/api.js          # API client (chat, intro, status)
+        |-- store/useAppStore.js     # Zustand store
+        |
+        |-- components/
+        |   |-- layout/              # MainLayout, Sidebar, Topbar, RightPanel
+        |   |-- chat/                # ChatInterface, MessageList
+        |   |-- intro/IntroPanel.jsx # Landing greeting + sample data
+        |   |-- status/ServerStatusBadge.jsx
+        |   |-- workflow/WorkflowProgress.jsx
+        |   |-- Upload/FileUploader.jsx
+        |   |-- Renderers/           # Table, Markdown, Plotly renderers
+        |   |-- data_view/           # Data explorer
+        |   |-- Charts/              # Chart components
+        |   `-- Feedback/ReviewModal.jsx
+        |
+        |-- pages/ManualPlotPage.jsx
+        |-- hooks/
+        `-- assets/
 
 
 TECHNOLOGY STACK
@@ -200,7 +193,6 @@ BACKEND
 - Uvicorn 0.30.6
 - Python 3.11
 - Pydantic 2.9.2 / pydantic-settings 2.5.2
-- SQLAlchemy 2.0.36 (async) + asyncpg 0.30.0  - Supabase driver
 - httpx, tenacity (retry logic)
 
 AI / SANDBOX
@@ -229,7 +221,7 @@ DEPLOYMENT
 ----------
 - Backend: Render free-tier web service (Python)
 - Frontend: Vercel free-tier static site
-- Database: Supabase free-tier PostgreSQL
+- Data: three bundled CSV files (no external database)
 
 
 ENVIRONMENT SETUP (LOCAL)
@@ -239,8 +231,7 @@ REQUIREMENTS
 ------------
 - Python 3.11+
 - Node.js 18+ and npm
-- API Keys: OpenRouter, E2B, Supabase (DATABASE_URL)
-- Optional: a sample CSV you want to drop in (default: sample_timeseries.csv)
+- API Keys: OpenRouter, E2B
 
 BACKEND SETUP
 -------------
@@ -254,7 +245,6 @@ BACKEND SETUP
 4. Create back_end/.env with:
        OPENROUTER_API_KEY=your_openrouter_key
        E2B_API_KEY=your_e2b_key
-       DATABASE_URL=postgresql://postgres:Thinh%402802002@db.<ref>.supabase.co:5432/postgres
        BACKEND_SECRET_TOKEN=any-long-random-string
        TEMP_DATA_DIR=temp_data
        LOG_LEVEL=INFO
@@ -288,8 +278,6 @@ BACKEND ON RENDER (one-click Blueprint)
    correct build/start commands, root directory, health check path,
    and environment variable keys.
 4. Fill in the values:
-       DATABASE_URL       = your Supabase connection string
-                           (URL-encode "@" in the password as "%40")
        OPENROUTER_API_KEY = your OpenRouter key
        E2B_API_KEY        = your E2B key
        BACKEND_SECRET_TOKEN = click "Generate" or set a known value
@@ -312,11 +300,9 @@ FREE-TIER NOTES
 - Render spins down the service after 15 minutes of inactivity.
   The first request after that takes 30-60 seconds. The frontend
   ServerStatusBadge explains this to the user.
-- E2B and Supabase free tiers impose their own limits (compute time
-  and database size / egress).
-- The startup hook retries the Supabase ping up to 4 times with a
-  2-second delay so Render's slow outbound network does not produce
-  noisy "Network is unreachable" warnings.
+- E2B free tier imposes its own limits (compute time per request).
+- All data lives in three small CSV files bundled with the backend,
+  so no external database connection is needed.
 
 
 API ENDPOINTS
@@ -325,19 +311,20 @@ API ENDPOINTS
 PUBLIC (no API key)
 -------------------
 GET  /api/intro
-  Returns the landing greeting plus a description of the sample data
-  and live database row counts.
+  Returns the landing greeting plus a description of every bundled
+  CSV sample.
 
 GET  /api/status
-  Lightweight endpoint for the connection badge. Reports uptime,
-  database reachability, and the free-tier warm-up note.
+  Lightweight endpoint for the connection badge. Reports uptime
+  and the free-tier warm-up note.
 
 GET  /api/sample-data/tell-me
   Returns a pre-built query string for the "Tell me about this data"
   button on the frontend.
 
 GET  /health
-  Health probe used by Render. Reports uptime and database status.
+  Health probe used by Render. Reports uptime and the list of
+  sample files in temp_data/.
 
 PROTECTED (X-API-Key required)
 ------------------------------
@@ -370,18 +357,17 @@ WORKFLOW & COMMUNICATION PROTOCOL
 The AI and the backend communicate in a strict loop:
 
 1. The frontend sends the user query + selected tables.
-2. The system injects the data context and the database summary
-   into a structured system prompt.
+2. The system injects the data context into a structured system prompt.
 3. The LLM responds with three lines:
 
        Response to user: <text> | None
-       Request system:   None | E2B_EXE | QUERY_DB | <tool name>
+       Request system:   None | E2B_EXE | QUERY_CSV | <tool name>
        Code:             <python code> | <json query> | None
 
 4. If Request system is E2B_EXE -> the backend runs the code in
    E2B, downloads new files, and feeds the result back to the LLM.
-5. If Request system is QUERY_DB -> the backend runs a safe
-   read-only SQLAlchemy query against Supabase and feeds the row
+5. If Request system is QUERY_CSV -> the backend runs a safe
+   read-only pandas query against the bundled CSV and feeds the row
    summary back to the LLM.
 6. The loop continues until the LLM returns a non-empty
    "Response to user".
@@ -405,8 +391,8 @@ AUTHENTICATION
   user interaction.
 
 DATA PROTECTION
-- Database: read-only via an allow-list of tables (games, users,
-  reviews) and columns; aggregations only.
+- CSV queries: read-only via an allow-list of tables (metadata,
+  reviews, sample_timeseries) and columns; whitelisted operators.
 - File upload: 100 MB max, extension allow-list, sandboxed E2B
   execution.
 - Secrets: never committed to the repo. .env files are listed in
@@ -419,7 +405,8 @@ TROUBLESHOOTING
 BACKEND WON'T START
 - Check Python 3.11+ is installed.
 - Verify all dependencies: pip install -r requirements.txt
-- Make sure back_end/.env exists and contains DATABASE_URL.
+- Make sure back_end/.env exists and contains OPENROUTER_API_KEY
+  and E2B_API_KEY.
 - Verify port 8000 is free.
 
 FRONTEND WON'T START
@@ -432,15 +419,9 @@ FRONTEND WON'T START
 LONG WARM-UP ON RENDER
 - The first request after a 15-minute idle period takes 30-60 s
   while the free-tier service spins up.
-- The frontend ServerStatusBadge shows "Connecting..." during  this period. The /api/status endpoint is polled every 15-60 s and
-  the badge updates to Connected once Supabase responds.
-
-DATABASE CONNECTION FAILS
-- Verify DATABASE_URL is correct and URL-encoded (especially "@" -> "%40").
-- The startup hook now retries up to 4 times with a 2 s delay to
-  ride out Render's slow first outbound connection.
-- You can run "python back_end/db_query_smoke.py" locally to confirm
-  the credentials work before deploying.
+- The frontend ServerStatusBadge shows "Connecting..." during this
+  period. The /api/status endpoint is polled and the badge updates
+  to Connected once the backend responds.
 
 WRONG API KEY / 401 FROM BACKEND
 - BACKEND_SECRET_TOKEN in back_end/.env must match
@@ -458,36 +439,38 @@ LOGGING
 ADDING NEW TOOLS
 - Backend services: add a function in app/services/ and wire it
   into structured_workflow.py (look for the existing E2B_EXE and
-  QUERY_DB handlers).
+  QUERY_CSV handlers).
 - Frontend: the new panel goes under src/components/ and the
   axios call goes in src/services/api.js. The store update lives
   in src/store/useAppStore.js.
 
 TESTING LOCALLY
-- "python back_end/smoke_test.py" exercises the URL parser, ORM
-  models, schema description, and query validation without
-  hitting the network.
-- "python back_end/db_query_smoke.py" runs live SQLAlchemy
-  queries against the configured Supabase database and writes
-  the output to back_end/db_query_output.txt.
+- "python back_end/smoke_test.py" exercises the CSV-only mode:
+  describes all bundled tables, runs queries against metadata,
+  reviews and sample_timeseries, and validates the intro payload.
 
 
 VERSION HISTORY
 ================================================================================
 
-Version 2.3.0 (Current)
-- Removed Upstash Redis dependency. System connects to Supabase only.
+Version 2.4.0 (Current)
+- Removed Supabase / asyncpg / SQLAlchemy dependencies entirely.
+- All data lives in three bundled CSV files (metadata.csv,
+  reviews.csv, sample_timeseries.csv).
+- LLM tool replaced QUERY_DB with QUERY_CSV (read-only pandas).
+- New /api/intro, /api/status, /api/sample-data/tell-me endpoints.
+- New IntroPanel + ServerStatusBadge + WorkflowProgress components.
+- Pre-loaded samples are three CSVs in back_end/temp_data/ that the
+  backend registers on startup.
+- Smoke test now exercises CSV tools (no Supabase).
+- All user-facing text in English without emoji or special chars.
+- render.yaml Blueprint for one-click Render deploy.
+
+Version 2.3.0
+- Removed Upstash Redis dependency. System connected to Supabase only.
 - Added SQLAlchemy async models for games, users, reviews.
 - Added a read-only database tool (QUERY_DB) for the LLM.
 - Added live workflow progress events in /chat responses.
-- Added /api/intro, /api/status, /api/sample-data/tell-me endpoints.
-- Added IntroPanel, ServerStatusBadge, WorkflowProgress components.
-- Pre-loaded sample_timeseries.csv + db.* virtual views at startup.
-- Added render.yaml for one-click Render Blueprint deploy.
-- Added retry loop on Supabase ping to suppress cold-start warnings.
-- All user-facing text now in English without emoji or special chars.
 
 
-================================================================================
                               END OF README
-================================================================================

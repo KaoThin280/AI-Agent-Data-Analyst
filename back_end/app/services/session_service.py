@@ -22,11 +22,10 @@ class SessionManager:
     """
     In-memory session state for the current server run.
 
-    Tracks three categories of tables:
+    Tracks two categories of tables:
       - user-uploaded CSV/Excel files (added via /upload)
-      - pre-loaded local sample files (e.g. sample_timeseries.csv)
-      - virtual sample views backed by the Supabase database
-        (added via /sample-data/db)
+      - pre-loaded local sample files (e.g. sample_timeseries.csv,
+        metadata.csv, reviews.csv) registered on startup
     """
 
     def __init__(self):
@@ -35,9 +34,6 @@ class SessionManager:
         self.installed_packages: Set[str] = set()
         self.base_dir: str = settings.TEMP_DATA_DIR
         os.makedirs(self.base_dir, exist_ok=True)
-        # Cached database summary text (refreshed lazily).
-        self.db_summary: str = ""
-        self.db_available: bool = False
         logger.info("SessionManager initialised. Temp dir: %s", self.base_dir)
 
     # ── Table registration ───────────────────────────────────────────
@@ -130,19 +126,6 @@ class SessionManager:
     def get_table_names(self) -> List[str]:
         """Return all registered table names (for frontend listing)."""
         return list(self.tables.keys())
-
-    # ── Database summary caching ────────────────────────────────────
-
-    def set_db_summary(self, summary: str, available: bool) -> None:
-        """Cache the database summary so we do not query on every request."""
-        self.db_summary = summary
-        self.db_available = available
-
-    def get_db_summary(self) -> str:
-        return self.db_summary
-
-    def is_db_available(self) -> bool:
-        return self.db_available
 
 
 # Singleton — shared across all routes

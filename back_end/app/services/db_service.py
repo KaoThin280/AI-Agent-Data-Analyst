@@ -1,169 +1,136 @@
 """
-Database query service — read-only access to the Supabase Steam schema.
+CSV query service - read-only access to the bundled CSV samples.
 
-The LLM uses this module via the workflow tool `query_database(...)`.
-It is intentionally restricted to safe, read-only operations on a small
-allow-list of tables (games, users, reviews) so the model can describe
-and query sample data without being able to mutate the database.
+The LLM uses this module via the workflow tool. The "database" is now
+just the CSV files in back_end/temp_data/, so queries are implemented
+as pandas read_csv + filter + sort + head.
 
-Why a custom service instead of letting the model run raw SQL?
-  - The free-tier Render instance has limited RAM; we cap the row count
-    and reject obvious mutation statements.
-  - It produces a compact text/JSON summary that fits inside the
-    LLM context window for follow-up reasoning.
-  - It is safe by default even if the model misbehaves.
+This is intentionally restricted to safe, read-only operations on a
+small allow-list of tables (metadata, reviews, sample_timeseries) so
+the model can describe and query sample data without being able to
+mutate the files.
 """
 from __future__ import annotations
 
-import json
 import logging
-import re
-from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Sequence
+import os
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import asc, desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+import pandas as pd
 
-from app.api.routers.db.sessions import AsyncSessionLocal
-from app.models import Game, Review, SteamUser
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# ── Safety knobs ─────────────────────────────────────────────────────
-MAX_ROWS_RETURNED = 50
-# Only these tables may be queried through the LLM tool.
-ALLOWED_TABLES = frozenset({"games", "users", "reviews"})
-# Only these columns may be selected. The model is given a fixed
-# allow-list (rather than SELECT *) so it cannot pull very long text
-# blobs into the context window unnecessarily.
-ALLOWED_COLUMNS = {
-    "games": [
-        "steam_appid", "name", "is_free", "supported_languages",
-        "required_age", "release_date", "publishers", "developers",
-        "categories", "genres", "price_text",
-    ],
-    "users": [
-        "steamid", "personaname", "num_games_owned",
-    ],
-    "reviews": [
-        "recommendationid", "steam_appid", "steamid", "language",
-        "review_text", "timestamp_created", "timestamp_updated",
-        "refunded", "received_for_free", "written_during_early_access",
-        "primarily_steam_deck", "playtime_at_review",
-        "playtime_last_two_weeks", "playtime_forever",
-    ],
+# ----------------------------------------------------------------------
+# Allow-list of tables the LLM tool can query. The keys are the on-disk
+# CSV filenames in back_end/temp_data/. The "kind" field is for human
+# reference only and is not used for matching.
+# ----------------------------------------------------------------------
+ALLOWED_TABLES: Dict[str, Dict[str, Any]] = {
+    "metadata": {
+        "file": "metadata.csv",
+        "description": "Steam game metadata (name, release date, price, ...).",
+    },
+    "reviews": {
+        "file": "reviews.csv",
+        "description": "User reviews with timestamps and playtime stats.",
+    },
+    "sample_timeseries": {
+        "file": "sample_timeseries.csv",
+        "description": "Daily revenue series for 2024-2025.",
+    },
 }
-# Aggregations the model may request explicitly.
-ALLOWED_AGGREGATES = frozenset({"count", "avg", "min", "max", "sum"})
-# Sortable columns (string-typed, to avoid weird behaviour on dates).
-SORTABLE_COLUMNS = {
-    "games": ["name", "release_date", "required_age"],
-    "users": ["personaname", "num_games_owned"],
+
+# Hard cap on rows returned to the LLM.
+MAX_ROWS_RETURNED = 50
+
+# Sortable columns per table (whitelist to keep queries predictable).
+SORTABLE_COLUMNS: Dict[str, List[str]] = {
+    "metadata": [
+        "name", "release_date", "required_age", "price_text", "steam_appid",
+    ],
     "reviews": [
         "timestamp_created", "playtime_at_review",
         "playtime_last_two_weeks", "playtime_forever",
     ],
+    "sample_timeseries": ["date", "revenue"],
 }
 
+# Allowed filter operators.
+_OPS = {"=", "!=", "<", "<=", ">", ">="}
 
-# ── Helpers ──────────────────────────────────────────────────────────
 
-def _serialise(value: Any) -> Any:
-    """Convert SQLAlchemy / Python values into JSON-safe primitives."""
-    if value is None:
+def _table_path(table: str) -> Optional[str]:
+    """Resolve a logical table name to an on-disk CSV path."""
+    info = ALLOWED_TABLES.get(table)
+    if not info:
         return None
-    if isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, (date, datetime)):
-        return value.isoformat()
-    return str(value)
+    return os.path.join(settings.TEMP_DATA_DIR, info["file"])
 
 
-def _rows_to_text(rows: Sequence[Dict[str, Any]], columns: Sequence[str]) -> str:
-    """Format a small list of rows as a compact, human-readable table."""
-    if not rows:
+def _validate_columns(table: str, requested: Optional[List[str]]) -> Optional[List[str]]:
+    """Return the column list to read, or None if the request is invalid."""
+    if not requested:
+        return None
+    path = _table_path(table)
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        df = pd.read_csv(path, nrows=0)
+    except Exception:
+        return None
+    valid = set(df.columns)
+    safe = [c for c in requested if c in valid]
+    return safe or None
+
+
+def _format_rows(df: pd.DataFrame) -> str:
+    """Format a small DataFrame as a compact text table."""
+    if df.empty:
         return "(no rows)"
-    header = " | ".join(columns)
-    sep = "-+-".join("-" * len(c) for c in columns)
-    body_lines = []
-    for r in rows:
-        body_lines.append(" | ".join(str(r.get(c, ""))[:80] for c in columns))
-    return "\n".join([header, sep, *body_lines])
+    cols = list(df.columns)
+    header = " | ".join(cols)
+    sep = "-+-".join("-" * len(c) for c in cols)
+    body = "\n".join(
+        " | ".join(
+            "" if pd.isna(v) else str(v)[:80] for v in row
+        )
+        for row in df.itertuples(index=False, name=None)
+    )
+    return "\n".join([header, sep, body])
 
 
-def _validate_identifier(name: str, allow_list: Sequence[str]) -> Optional[str]:
-    """Return the identifier if it is in the allow-list, else None."""
-    if not name:
-        return None
-    if name in allow_list:
-        return name
-    return None
-
-
-def _apply_filter(stmt, model, column: str, op: str, value: Any):
-    """
-    Apply a simple WHERE clause: column op value.
-    Supported ops: =, !=, <, <=, >, >=, like, ilike.
-    Unknown ops raise ValueError.
-    """
-    col_attr = getattr(model, column, None)
-    if col_attr is None:
-        raise ValueError(f"Unknown column '{column}' for this table")
-    op_normalised = op.lower()
-    if op_normalised == "=":
-        return stmt.where(col_attr == value)
-    if op_normalised == "!=":
-        return stmt.where(col_attr != value)
-    if op_normalised == "<":
-        return stmt.where(col_attr < value)
-    if op_normalised == "<=":
-        return stmt.where(col_attr <= value)
-    if op_normalised == ">":
-        return stmt.where(col_attr > value)
-    if op_normalised == ">=":
-        return stmt.where(col_attr >= value)
-    if op_normalised in ("like", "ilike"):
-        return stmt.where(col_attr.ilike(value) if op_normalised == "ilike" else col_attr.like(value))
-    raise ValueError(f"Unsupported operator '{op}'")
-
-
-# ── Tool: query_database ─────────────────────────────────────────────
-
-async def query_database(
+def query_table(
     table: str,
     columns: Optional[List[str]] = None,
     filters: Optional[List[Dict[str, Any]]] = None,
     order_by: Optional[str] = None,
     order_dir: str = "asc",
     limit: int = 20,
-    aggregate: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Read-only query against the Supabase Steam schema.
+    Read-only query against one of the bundled CSV samples.
 
     Parameters
     ----------
     table : str
-        One of: games, users, reviews.
+        One of: metadata, reviews, sample_timeseries.
     columns : list[str] | None
-        Subset of columns to return. Defaults to all allowed columns.
+        Subset of columns to return. None = all columns.
     filters : list[dict] | None
         Each dict has keys: column, op, value. Multiple filters are
         combined with AND.
     order_by : str | None
-        Column name to sort by (must be in the sortable allow-list).
+        Column name to sort by (must be in SORTABLE_COLUMNS).
     order_dir : str
         'asc' or 'desc'.
     limit : int
-        Max rows to return. Hard-capped at MAX_ROWS_RETURNED.
-    aggregate : dict | None
-        Optional aggregation, e.g. {"func": "count", "column": "steam_appid"}.
+        Max rows to return (1..MAX_ROWS_RETURNED).
 
     Returns
     -------
-    dict with keys:
-        success (bool), table, columns, row_count, rows (list of dicts),
-        text (compact string summary), error (str | None).
+    dict with keys: success, table, columns, row_count, rows, text, error.
     """
     table_normalised = (table or "").strip().lower()
     if table_normalised not in ALLOWED_TABLES:
@@ -176,131 +143,78 @@ async def query_database(
             "text": "",
             "error": (
                 f"Table '{table}' is not accessible. "
-                f"Allowed tables: {', '.join(sorted(ALLOWED_TABLES))}."
+                f"Allowed tables: {', '.join(sorted(ALLOWED_TABLES.keys()))}."
             ),
         }
 
-    model = {
-        "games": Game,
-        "users": SteamUser,
-        "reviews": Review,
-    }[table_normalised]
+    path = _table_path(table_normalised)
+    if not path or not os.path.isfile(path):
+        return {
+            "success": False,
+            "table": table_normalised,
+            "columns": [],
+            "row_count": 0,
+            "rows": [],
+            "text": "",
+            "error": f"Data file for table '{table}' is missing on disk.",
+        }
 
-    allowed_cols = ALLOWED_COLUMNS[table_normalised]
-    if columns:
-        safe_cols = []
-        for c in columns:
-            v = _validate_identifier(c, allowed_cols)
-            if v:
-                safe_cols.append(v)
-        if not safe_cols:
-            return {
-                "success": False,
-                "table": table_normalised,
-                "columns": [],
-                "row_count": 0,
-                "rows": [],
-                "text": "",
-                "error": "None of the requested columns are allowed.",
-            }
-        select_cols = safe_cols
-    else:
-        select_cols = list(allowed_cols)
+    safe_limit = max(1, min(int(limit or 20), MAX_ROWS_RETURNED))
+    select_cols = _validate_columns(table_normalised, columns)
 
     try:
-        safe_limit = max(1, min(int(limit or 20), MAX_ROWS_RETURNED))
+        df = pd.read_csv(path)
 
-        async with AsyncSessionLocal() as session:  # type: AsyncSession
-            if aggregate:
-                agg_func = (aggregate.get("func") or "").lower()
-                agg_column = aggregate.get("column") or "*"
-                if agg_func not in ALLOWED_AGGREGATES:
-                    raise ValueError(f"Unsupported aggregate '{agg_func}'")
-                if agg_func == "count":
-                    sql_func = func.count(
-                        getattr(model, agg_column, None)
-                        if agg_column != "*" else None
-                    ) if agg_column != "*" else func.count()
-                    stmt = select(sql_func)
-                else:
-                    col_attr = getattr(model, agg_column, None)
-                    if col_attr is None:
-                        raise ValueError(
-                            f"Unknown column '{agg_column}' for aggregate"
-                        )
-                    sql_func = {
-                        "avg": func.avg,
-                        "min": func.min,
-                        "max": func.max,
-                        "sum": func.sum,
-                    }[agg_func](col_attr)
-                    stmt = select(sql_func)
+        # Apply filters with safe operator whitelist.
+        if filters:
+            for f in filters:
+                col = f.get("column")
+                op = (f.get("op") or "").strip()
+                val = f.get("value")
+                if col not in df.columns or op not in _OPS:
+                    continue
+                if op == "=":
+                    df = df[df[col] == val]
+                elif op == "!=":
+                    df = df[df[col] != val]
+                elif op == "<":
+                    df = df[df[col] < val]
+                elif op == "<=":
+                    df = df[df[col] <= val]
+                elif op == ">":
+                    df = df[df[col] > val]
+                elif op == ">=":
+                    df = df[df[col] >= val]
 
-                if filters:
-                    for f in filters:
-                        stmt = _apply_filter(
-                            stmt, model, f["column"], f["op"], f["value"]
-                        )
+        # Select columns last so filter eval still works on full df.
+        if select_cols:
+            df = df[select_cols]
 
-                result = await session.execute(stmt)
-                scalar = result.scalar()
-                agg_value = _serialise(scalar)
-                text = f"{agg_func.upper()}({agg_column}) = {agg_value}"
-                return {
-                    "success": True,
-                    "table": table_normalised,
-                    "columns": [f"{agg_func}({agg_column})"],
-                    "row_count": 1,
-                    "rows": [{f"{agg_func}({agg_column})": agg_value}],
-                    "text": text,
-                    "error": None,
-                }
+        # Sort by an allow-listed column.
+        if order_by and order_by in SORTABLE_COLUMNS.get(table_normalised, []):
+            df = df.sort_values(by=order_by, ascending=(order_dir.lower() != "desc"))
 
-            cols_attr = [getattr(model, c) for c in select_cols]
-            stmt = select(*cols_attr)
+        df = df.head(safe_limit)
 
-            if filters:
-                for f in filters:
-                    stmt = _apply_filter(
-                        stmt, model, f["column"], f["op"], f["value"]
-                    )
+        rows: List[Dict[str, Any]] = []
+        for _, row in df.iterrows():
+            rows.append({
+                col: (None if pd.isna(v) else v) for col, v in row.items()
+            })
 
-            if order_by:
-                sort_col = _validate_identifier(
-                    order_by, SORTABLE_COLUMNS[table_normalised]
-                )
-                if sort_col:
-                    sort_attr = getattr(model, sort_col)
-                    stmt = stmt.order_by(
-                        desc(sort_attr) if order_dir.lower() == "desc" else asc(sort_attr)
-                    )
-
-            stmt = stmt.limit(safe_limit)
-
-            result = await session.execute(stmt)
-            db_rows = result.all()
-
-            rows: List[Dict[str, Any]] = []
-            for row in db_rows:
-                row_dict = {}
-                for col_name, value in zip(select_cols, row):
-                    row_dict[col_name] = _serialise(value)
-                rows.append(row_dict)
-
-            text = _rows_to_text(rows, select_cols)
-
-            return {
-                "success": True,
-                "table": table_normalised,
-                "columns": select_cols,
-                "row_count": len(rows),
-                "rows": rows,
-                "text": text,
-                "error": None,
-            }
+        out_cols = list(df.columns)
+        return {
+            "success": True,
+            "table": table_normalised,
+            "columns": out_cols,
+            "row_count": len(rows),
+            "rows": rows,
+            "text": _format_rows(df),
+            "error": None,
+        }
 
     except Exception as exc:
-        logger.exception("query_database failed for table=%s", table_normalised)
+        logger.exception("query_table failed for table=%s", table_normalised)
         return {
             "success": False,
             "table": table_normalised,
@@ -312,155 +226,21 @@ async def query_database(
         }
 
 
-# ── Tool: describe_database ──────────────────────────────────────────
-
-def describe_database() -> Dict[str, Any]:
-    """
-    Return a structured description of the database schema. The LLM
-    uses this to understand which tables and columns it can query.
-    """
-    schema = {
-        "games": {
-            "description": (
-                "One row per Steam game. Contains metadata such as name, "
-                "release date, price, supported languages, and flattened "
-                "comma-separated lists of publishers, developers, "
-                "categories, and genres."
-            ),
-            "columns": [
-                {"name": "steam_appid", "type": "INTEGER", "key": "primary"},
-                {"name": "name", "type": "TEXT", "key": None},
-                {"name": "is_free", "type": "BOOLEAN", "key": None},
-                {"name": "supported_languages", "type": "TEXT", "key": None},
-                {"name": "required_age", "type": "INTEGER", "key": None},
-                {"name": "release_date", "type": "DATE", "key": None},
-                {"name": "publishers", "type": "TEXT", "key": None},
-                {"name": "developers", "type": "TEXT", "key": None},
-                {"name": "categories", "type": "TEXT", "key": None},
-                {"name": "genres", "type": "TEXT", "key": None},
-                {"name": "price_text", "type": "TEXT", "key": None},
-            ],
-            "row_count_estimate": None,
-        },
-        "users": {
-            "description": (
-                "Steam user profiles extracted from reviews. personaname "
-                "is the display name."
-            ),
-            "columns": [
-                {"name": "steamid", "type": "BIGINT", "key": "primary"},
-                {"name": "personaname", "type": "TEXT", "key": None},
-                {"name": "num_games_owned", "type": "INTEGER", "key": None},
-            ],
-            "row_count_estimate": None,
-        },
-        "reviews": {
-            "description": (
-                "User reviews of games, including language, optional review "
-                "text, timestamps, refund / free-copy flags, and playtime "
-                "statistics."
-            ),
-            "columns": [
-                {"name": "recommendationid", "type": "BIGINT", "key": "primary"},
-                {"name": "steam_appid", "type": "INTEGER",
-                 "key": "FK -> games.steam_appid"},
-                {"name": "steamid", "type": "BIGINT",
-                 "key": "FK -> users.steamid"},
-                {"name": "language", "type": "TEXT", "key": None},
-                {"name": "review_text", "type": "TEXT", "key": None},
-                {"name": "timestamp_created", "type": "TIMESTAMPTZ", "key": None},
-                {"name": "timestamp_updated", "type": "TIMESTAMPTZ", "key": None},
-                {"name": "refunded", "type": "BOOLEAN", "key": None},
-                {"name": "received_for_free", "type": "BOOLEAN", "key": None},
-                {"name": "written_during_early_access", "type": "BOOLEAN",
-                 "key": None},
-                {"name": "primarily_steam_deck", "type": "BOOLEAN",
-                 "key": None},
-                {"name": "playtime_at_review", "type": "INTEGER", "key": None},
-                {"name": "playtime_last_two_weeks", "type": "INTEGER",
-                 "key": None},
-                {"name": "playtime_forever", "type": "INTEGER", "key": None},
-            ],
-            "row_count_estimate": None,
-        },
-    }
-    return schema
-
-
-# ── Tool: get_database_summary ───────────────────────────────────────
-
-async def get_database_summary() -> str:
-    """
-    Build a human-readable summary of the database contents (row counts
-    and a small sample per table). Used by the workflow on startup so
-    the LLM has a sense of how much data is available.
-    """
-    lines: List[str] = []
-    async with AsyncSessionLocal() as session:  # type: AsyncSession
-        for model, label in ((Game, "games"), (SteamUser, "users"), (Review, "reviews")):
+def describe_tables() -> Dict[str, Any]:
+    """Return a static description of every accessible table."""
+    result: Dict[str, Any] = {}
+    for table, info in ALLOWED_TABLES.items():
+        path = _table_path(table)
+        columns: List[str] = []
+        if path and os.path.isfile(path):
             try:
-                count = (await session.execute(select(func.count()).select_from(model))).scalar() or 0
+                df = pd.read_csv(path, nrows=0)
+                columns = list(df.columns)
             except Exception:
-                count = -1
-            lines.append(f"- {label}: {count} row(s)")
-
-        try:
-            sample = (await session.execute(
-                select(Game.name, Game.release_date, Game.genres, Game.price_text)
-                .order_by(Game.release_date.desc().nullslast())
-                .limit(5)
-            )).all()
-            if sample:
-                lines.append("")
-                lines.append("Recent games sample:")
-                for name, rdate, genres, price in sample:
-                    lines.append(
-                        f"  - {name} | released {rdate or 'unknown'} | "
-                        f"genres: {genres or 'n/a'} | price: {price or 'n/a'}"
-                    )
-        except Exception:
-            pass
-
-    return "\n".join(lines)
-
-
-# ── Tool: get_database_overview (for /api/intro) ─────────────────────
-
-async def get_database_overview() -> Dict[str, Any]:
-    """
-    Return a compact overview of the database (row counts only) for
-    the frontend intro/status endpoints. Always returns a dict, even
-    if the database is unreachable, so the frontend can still render
-    a meaningful greeting.
-
-    `available` is True only when at least one row-count query
-    succeeded; otherwise the function returns available=False and
-    populates `error` with the reason.
-    """
-    counts = {"games": 0, "users": 0, "reviews": 0}
-    available = False
-    error: Optional[str] = None
-    successful_counts = 0
-    try:
-        async with AsyncSessionLocal() as session:  # type: AsyncSession
-            for model, key in ((Game, "games"), (SteamUser, "users"), (Review, "reviews")):
-                try:
-                    cnt = (await session.execute(
-                        select(func.count()).select_from(model)
-                    )).scalar() or 0
-                    counts[key] = int(cnt)
-                    successful_counts += 1
-                except Exception as inner_exc:
-                    logger.warning("count failed for %s: %s", key, inner_exc)
-            available = successful_counts == len(counts)
-    except Exception as exc:
-        error = f"{type(exc).__name__}: {exc}"
-        logger.warning("Database not reachable for overview: %s", exc)
-
-    return {
-        "available": available,
-        "counts": counts,
-        "error": error,
-    }
-
-
+                pass
+        result[table] = {
+            "description": info["description"],
+            "file": info["file"],
+            "columns": columns,
+        }
+    return result

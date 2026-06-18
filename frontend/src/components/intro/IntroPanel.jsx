@@ -132,11 +132,8 @@ export default function IntroPanel() {
   const howTo = intro?.intro?.how_to_use || [];
   const futureWork = intro?.intro?.future_work || [];
 
-  const local = intro?.sample_data?.local;
-  const db = intro?.sample_data?.database;
-  const dbAvailable = !!db?.available;
-  const dbError = db?.error;
-  const dbCounts = db?.row_counts || {};
+  const samples = intro?.sample_data || {};
+  const sampleNames = Object.keys(samples).sort();
 
   return (
     <div className="space-y-6 text-gray-700 dark:text-gray-200">
@@ -177,32 +174,17 @@ export default function IntroPanel() {
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {local && (
-            <SampleRow
-              name={local.name}
-              label={local.title}
-              source="sample"
-              description={local.description}
-              columns={local.columns || []}
-              rowCount={local._rowCount || 0}
-              onTellMe={handleTellMe}
-              isLoading={isLoading}
-            />
-          )}
-
-          {db && db.tables?.map((t) => {
-            const alias = t.alias;
-            const count = dbCounts?.[alias] || 0;
-            const cols = (db.columns && db.columns[alias]) || [];
+          {sampleNames.map((name) => {
+            const meta = samples[name] || {};
             return (
               <SampleRow
-                key={t.name}
-                name={t.name}
-                label={t.description?.split('.')[0] || t.name}
-                source="db"
-                description={t.description}
-                columns={cols}
-                rowCount={count}
+                key={name}
+                name={name}
+                label={meta.title || name}
+                source="sample"
+                description={meta.description || ''}
+                columns={meta.columns || []}
+                rowCount={0}
                 onTellMe={handleTellMe}
                 isLoading={isLoading}
               />
@@ -210,17 +192,9 @@ export default function IntroPanel() {
           })}
         </div>
 
-        {/* DB error banner */}
-        {db && !dbAvailable && dbError && (
-          <div className="mt-3 text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
-            Database preview is unavailable: {dbError}. The backend can still
-            answer questions using the bundled sample file.
-          </div>
-        )}
-
         <div className="mt-3 flex items-center justify-between">
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Both samples are loaded automatically. Use the button above to send a pre-filled prompt to the backend.
+            All samples are loaded automatically. Use the button above to send a pre-filled prompt to the backend.
           </p>
           <button
             type="button"

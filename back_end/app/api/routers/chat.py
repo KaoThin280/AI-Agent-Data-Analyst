@@ -4,7 +4,7 @@ Flow:
   1. Receive user query -> Build structured prompt (User query + System data)
   2. Send to AI -> Parse structured response
   3. If Request system = E2B_EXE -> Execute code in E2B sandbox -> Loop
-  4. If Request system = QUERY_DB -> Query Supabase -> Loop
+  4. If Request system = QUERY_CSV -> Read bundled CSV sample -> Loop
   5. If Response to user != None -> Return final answer with workflow events
 """
 import asyncio
@@ -46,19 +46,17 @@ async def handle_chat(
     Execute the structured AI-System communication loop.
     """
     data_context_summary = session_manager.get_all_tables_info()
-    db_summary = session_manager.get_db_summary() or ""
     files_in_session = [
         meta["path"]
         for name, meta in session_manager.tables.items()
-        if meta.get("path") and meta.get("source") != "db"
+        if meta.get("path")
     ]
 
     logger.info(
-        "Chat request: query='%s...'  tables=%d  files=%d  db_available=%s",
+        "Chat request: query='%s...'  tables=%d  files=%d",
         query[:80],
         len(session_manager.tables),
         len(files_in_session),
-        session_manager.is_db_available(),
     )
 
     try:
@@ -67,7 +65,6 @@ async def handle_chat(
             data_context_summary=data_context_summary,
             installed_packages=session_manager.installed_packages,
             files_in_session=files_in_session,
-            db_summary=db_summary,
             max_retries=4,
         )
     except RuntimeError as exc:

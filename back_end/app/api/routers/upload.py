@@ -120,7 +120,6 @@ async def handle_upload(
             data_context_summary=data_context_summary,
             installed_packages=session_manager.installed_packages,
             files_in_session=[file_path],
-            db_summary=session_manager.get_db_summary() or "",
             max_retries=3,
         )
         ai_analysis = workflow_result.get("response_to_user", "")

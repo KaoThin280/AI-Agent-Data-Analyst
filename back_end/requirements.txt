@@ -10,10 +10,6 @@ pandas==2.2.3
 openpyxl==3.1.5
 pyarrow==17.0.0          # memory-efficient CSV parsing
 
-# Database (Supabase PostgreSQL)
-SQLAlchemy[asyncio]==2.0.36
-asyncpg==0.30.0          # async PostgreSQL driver used by SQLAlchemy
-
 # AI / LLM (Hugging Face + Gemini + OpenRouter)
 huggingface_hub==0.25.0
 google-genai==0.5.0
