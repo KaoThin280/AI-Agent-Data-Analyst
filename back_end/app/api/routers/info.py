@@ -1,5 +1,5 @@
 """
-Info router — endpoints used by the frontend to render the landing
+Info router - endpoints used by the frontend to render the landing
 greeting, sample-data descriptions, and the live server-status badge.
 
 These endpoints are PUBLIC (no API-key required) so the landing UI can
@@ -11,7 +11,8 @@ from typing import Any, Dict
 
 from fastapi import APIRouter
 
-from app.services.db_service import describe_database, get_database_overview
+from app.api.routers.db.sessions import get_db_overview_cached
+from app.services.db_service import describe_database
 from app.services.sample_data_service import LOCAL_SAMPLE_NAME
 from app.services.session_service import session_manager
 
@@ -117,7 +118,8 @@ async def get_intro() -> Dict[str, Any]:
     the landing page can show how much sample data is currently in the
     connected database.
     """
-    db_overview = await get_database_overview()
+    # Cached overview: 30 s fresh / 60 s when previous attempt failed.
+    db_overview = await get_db_overview_cached()
     db_schema = describe_database()
 
     # Per-table columns for the description block on the frontend.
@@ -147,10 +149,11 @@ async def get_intro() -> Dict[str, Any]:
 @router.get("/api/status", summary="Live server connection status")
 async def get_status() -> Dict[str, Any]:
     """
-    Lightweight endpoint used by the frontend status badge. Pings the
-    database, reports uptime, and explains the free-tier behaviour.
+    Lightweight endpoint used by the frontend status badge. Uses the
+    cached database overview so repeated polls do not spam the log
+    when the database is briefly unreachable.
     """
-    db_overview = await get_database_overview()
+    db_overview = await get_db_overview_cached()
     uptime_seconds = int(time.time() - _BOOT_TIME)
 
     db_ready = bool(db_overview.get("available"))
