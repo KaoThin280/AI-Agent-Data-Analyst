@@ -1,10 +1,42 @@
-# Bỏ qua môi trường ảo và cache của Python
+# Python: virtual env and cache
 __pycache__/
 *.py[cod]
 *$py.class
+.venv/
+venv/
+env/
+*.egg-info/
 
-# Bỏ qua file biến môi trường (Tuyệt đối quan trọng)
+# Environment files (NEVER commit secrets)
 .env
+.env.*
+!.env.example
 
-# Bỏ qua thư mục dữ liệu tạm
+# Generated files and runtime data
 back_end/temp_data/
+back_end/reviews.txt
+back_end/db_query_output.txt
+back_end/smoke_output.txt
+temp_data/
+*.log
+
+# Test and smoke-test scripts that hit live infrastructure.
+# These are developer artifacts and should never end up in the
+# production repo. Run them locally or in CI, not from main.
+back_end/smoke_test.py
+back_end/db_query_smoke.py
+back_end/test_backend.py
+back_end/test_response.txt
+
+# IDE / OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Build outputs
+back_end/dist/
+back_end/build/
+back_end/__pycache__/
