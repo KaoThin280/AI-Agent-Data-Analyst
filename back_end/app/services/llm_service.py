@@ -2,7 +2,7 @@
 Unified LLM Service – now using OpenRouter API.
 
 Provider: OpenRouter (OpenAI Compatible)
-Model: meta-llama/llama-3-8b-instruct:free (or any model you set).
+Model: deepseek/deepseek-v4-flash (or any model you set).
 """
 
 import os
